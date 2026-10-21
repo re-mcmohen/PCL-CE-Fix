@@ -70,7 +70,6 @@ public class RegionPolicyTest
         Assert.AreEqual(RegionClassification.Mainland, result.Classification);
         Assert.IsFalse(result.IsRestricted);
         Assert.AreEqual("device-region-cn", result.Reason);
-        Assert.IsFalse(result.IsRestricted);
     }
 
     [TestMethod]

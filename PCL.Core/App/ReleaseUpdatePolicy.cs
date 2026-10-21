@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using PCL.Core.Utils;
 
@@ -20,8 +21,9 @@ public sealed record ReleaseUpdateCandidate(string Repository, string Tag, strin
 
 public static class ReleaseUpdatePolicy
 {
-    // Stamped by the sync workflow before tests and compilation.
-    public const string CurrentReleaseTag = "";
+    public static string CurrentReleaseTag { get; } = typeof(ReleaseUpdatePolicy).Assembly
+        .GetCustomAttributes<AssemblyMetadataAttribute>()
+        .FirstOrDefault(attribute => attribute.Key == "PCLCEFix.ReleaseTag")?.Value ?? "";
     public const string ForkRepository = "re-mcmohen/PCL-CE-Fix";
     public const string UpstreamRepository = "PCL-Community/PCL-CE";
 

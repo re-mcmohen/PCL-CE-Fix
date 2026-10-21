@@ -1,5 +1,5 @@
 diff --git a/PCL.Core.Test/RegionPolicyTest.cs b/PCL.Core.Test/RegionPolicyTest.cs
-index cd708b63..b510f220 100644
+index cd708b63..a8c1141c 100644
 --- a/PCL.Core.Test/RegionPolicyTest.cs
 +++ b/PCL.Core.Test/RegionPolicyTest.cs
 @@ -8,18 +8,20 @@ namespace PCL.Core.Test;
@@ -39,7 +39,7 @@ index cd708b63..b510f220 100644
          Assert.AreEqual("signals-unavailable", result.Reason);
      }
  
-@@ -61,22 +63,23 @@ public class RegionPolicyTest
+@@ -61,22 +63,22 @@ public class RegionPolicyTest
      }
  
      [TestMethod]
@@ -52,7 +52,6 @@ index cd708b63..b510f220 100644
 +        Assert.IsFalse(result.IsRestricted);
          Assert.AreEqual("device-region-cn", result.Reason);
 -        Assert.IsTrue(result.IsRestricted);
-+        Assert.IsFalse(result.IsRestricted);
      }
  
      [TestMethod]
@@ -67,7 +66,7 @@ index cd708b63..b510f220 100644
      }
  
      [TestMethod]
-@@ -94,7 +97,7 @@ public class RegionPolicyTest
+@@ -94,7 +96,7 @@ public class RegionPolicyTest
          var result = RegionPolicy.Evaluate(
              new RegionSignals(null, false, [], false, null, false, null, false, 242, true));
          Assert.AreEqual(RegionClassification.Unknown, result.Classification);
@@ -76,7 +75,7 @@ index cd708b63..b510f220 100644
      }
  
      [TestMethod]
-@@ -113,7 +116,7 @@ public class RegionPolicyTest
+@@ -113,7 +115,7 @@ public class RegionPolicyTest
          var result = RegionPolicy.Evaluate(new RegionSignals(null, false, ["zh-CN"], true,
              null, false, null, false));
          Assert.AreEqual(RegionClassification.Unknown, result.Classification);

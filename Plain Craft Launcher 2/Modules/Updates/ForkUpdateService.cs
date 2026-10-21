@@ -8,60 +8,43 @@ using PCL.Network.Loaders;
 
 namespace PCL;
 
-public sealed record RepositoryUpdateResult(string Repository, ReleaseUpdateCandidate? Release, string? Error);
-
 /// <summary>Check both distributions independently; installation always requires an explicit choice.</summary>
 public static class ForkUpdateService
 {
-    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(25) };
-    private static readonly SemaphoreSlim CheckLock = new(1, 1);
+    private static readonly ReleaseUpdateClient Client = new(
+        new HttpClient { Timeout = TimeSpan.FromSeconds(8) },
+        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
+        System.Runtime.InteropServices.Architecture.Arm64,
+        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"));
     private static readonly SemaphoreSlim InstallLock = new(1, 1);
-    private static DateTime _checkedAt;
-    public static RepositoryUpdateResult[] Results { get; private set; } = [];
+    private static readonly object RefreshLock = new();
+    private static Task _backgroundRefresh = Task.CompletedTask;
+    public static RepositoryUpdateResult[] Results => Client.Results;
     public static bool Installing { get; private set; }
 
     public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(ModBase.versionBaseName,
         Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag);
 
-    public static async Task<RepositoryUpdateResult[]> CheckAsync(bool force = false)
+    public static Task<RepositoryUpdateResult[]> CheckAsync(bool force = false) => Client.CheckAsync(force);
+
+    public static void RefreshInBackground()
     {
-        await CheckLock.WaitAsync().ConfigureAwait(false);
-        try
+        lock (RefreshLock)
         {
-            if (!force && Results.Length != 0 && DateTime.UtcNow - _checkedAt < TimeSpan.FromMinutes(5))
-                return Results;
-            Results = await Task.WhenAll(FetchAsync(ReleaseUpdatePolicy.ForkRepository),
-                FetchAsync(ReleaseUpdatePolicy.UpstreamRepository)).ConfigureAwait(false);
-            _checkedAt = DateTime.UtcNow;
-            return Results;
+            if (!_backgroundRefresh.IsCompleted) return;
+            _backgroundRefresh = Task.Run(async () =>
+            {
+                try { await CheckAsync().ConfigureAwait(false); }
+                catch (Exception ex) { ModBase.Log(ex, "[Update] 后台检查失败"); }
+            });
         }
-        finally { CheckLock.Release(); }
     }
 
-    private static async Task<RepositoryUpdateResult> FetchAsync(string repository)
+    public static void NotifyInBackground() => _ = Task.Run(async () =>
     {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get,
-                $"https://api.github.com/repos/{repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("PCL-CE-Fix-Updater/1.0");
-            request.Headers.Accept.ParseAdd("application/vnd.github+json");
-            using var response = await Client.SendAsync(request).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false))
-                       ?? throw new FormatException("Empty release response");
-            // Match the executable architecture, including x64 running on Windows ARM64.
-            var release = ReleaseUpdatePolicy.Parse(json, repository,
-                System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
-                System.Runtime.InteropServices.Architecture.Arm64);
-            return new(repository, release, null);
-        }
-        catch (Exception ex)
-        {
-            ModBase.Log(ex, $"[Update] {repository} 检查失败");
-            return new(repository, null, "检查失败，请稍后重试或打开发布页（GitHub API 可能限流）。");
-        }
-    }
+        try { await CheckAndNotifyAsync().ConfigureAwait(false); }
+        catch (Exception ex) { ModBase.Log(ex, "[Update] 后台更新通知失败"); }
+    });
 
     public static async Task CheckAndNotifyAsync()
     {

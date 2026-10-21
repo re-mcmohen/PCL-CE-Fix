@@ -15,7 +15,7 @@
 ```powershell
 # 对干净的上游 checkout 应用补丁；已经打过补丁会报错：
 python fix/apply.py PATH_TO_CLEAN_UPSTREAM
-dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest"
+dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest"
 dotnet publish 'Plain Craft Launcher 2/Plain Craft Launcher 2.csproj' -c Release -p:Platform=x64 --no-self-contained -o artifacts/x64
 ```
 

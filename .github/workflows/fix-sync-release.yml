@@ -68,15 +68,8 @@ jobs:
           python - "$upstream" "$control" "$tag" <<'PY'
           import json, sys
           from pathlib import Path
-          policy = Path('PCL.Core/App/ReleaseUpdatePolicy.cs')
-          text = policy.read_text(encoding='utf-8')
-          marker = 'public const string CurrentReleaseTag = "";'
-          if text.count(marker) != 1:
-              raise RuntimeError('Release identity marker missing or ambiguous')
-          policy.write_text(text.replace(marker,
-              'public const string CurrentReleaseTag = ' + json.dumps(sys.argv[3]) + ';'), encoding='utf-8')
           Path('fix-provenance.json').write_text(json.dumps({
-              'upstream': sys.argv[1], 'control': sys.argv[2],
+              'upstream': sys.argv[1], 'control': sys.argv[2], 'release_tag': sys.argv[3],
               'repository': 'PCL-Community/PCL-CE', 'branch': 'dev'
           }, indent=2) + '\n', encoding='utf-8')
           PY
@@ -106,16 +99,18 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
-      - name: Test region policy
+      - name: Test fork policies and updater
+        env:
+          PCL_EXPECTED_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         if: matrix.arch == 'x64'
-        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest"
+        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest"
       - name: Publish
         env:
           PCL_WRITE_SECRET: '1'
           PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
           PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
           PCL_GITHUB_SHA: ${{ needs.prepare.outputs.sha }}
-        run: dotnet publish "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }} --no-self-contained -o artifact
+        run: dotnet publish "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }} -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --no-self-contained -o artifact
       - name: Prepare executable
         shell: pwsh
         env:

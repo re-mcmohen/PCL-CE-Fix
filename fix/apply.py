@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,6 +21,7 @@ def apply(target: Path) -> None:
     policy = target / "PCL.Core/App/Region/RegionPolicy.cs"
     if "public bool IsRestricted => false;" not in policy.read_text(encoding="utf-8-sig"):
         raise RuntimeError("Region policy verification failed")
+    subprocess.run([sys.executable, str(ROOT / "fix" / "verify-attribution.py"), str(target)], check=True)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,18 @@ namespace PCL.Core.Test;
 [TestClass]
 public class ReleaseUpdatePolicyTest
 {
+    [TestMethod]
+    public void ReleaseIdentityIsEmbeddedByBuild()
+    {
+        var expected = Environment.GetEnvironmentVariable("PCL_EXPECTED_RELEASE_TAG");
+        if (string.IsNullOrEmpty(expected))
+        {
+            Assert.Inconclusive("Set PCL_EXPECTED_RELEASE_TAG and build with -p:PCLCEFixReleaseTag to verify CI metadata.");
+            return;
+        }
+        Assert.AreEqual(expected, ReleaseUpdatePolicy.CurrentReleaseTag);
+    }
+
     private static JsonObject Release(string repo, string tag, bool arm64 = false)
     {
         var file = repo == ReleaseUpdatePolicy.ForkRepository

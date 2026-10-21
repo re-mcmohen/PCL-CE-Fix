@@ -35,7 +35,10 @@ public static class UpdateManager
     
     public static UpdateEnums.VersionStatus GetVersionStatus()
     {
-        var results = ForkUpdateService.CheckAsync().GetAwaiter().GetResult();
+        // This method is also called by UI actions: never wait for network here.
+        ForkUpdateService.RefreshInBackground();
+        var results = ForkUpdateService.Results;
+        if (results.Length == 0) return UpdateEnums.VersionStatus.Unknown;
         if (results.Any(r => r.Release is not null && ForkUpdateService.IsNewer(r.Release)))
             return UpdateEnums.VersionStatus.NotLatest;
         return results.Any(r => r.Release is null)
@@ -47,7 +50,7 @@ public static class UpdateManager
     public static void UpdateStart(UpdateEnums.UpdateType type, string receivedKey = null, bool forceValidated = false)
     {
         // Always let the player select the distribution before downloading.
-        ModBase.RunInNewThread(() => ForkUpdateService.CheckAndNotifyAsync().GetAwaiter().GetResult());
+        ForkUpdateService.NotifyInBackground();
     }
 
     public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true)
@@ -131,7 +134,7 @@ public static class UpdateManager
     private static void ScheduleBasedOnConfig()
     {
         if (Config.Update.UpdateMode == LauncherAutoUpdateBehavior.Disable) return;
-        ForkUpdateService.CheckAndNotifyAsync().GetAwaiter().GetResult();
+        ForkUpdateService.NotifyInBackground();
     }
 
     /// <summary>
