@@ -9,6 +9,17 @@ namespace PCL.Core.Test;
 public class ReleaseUpdatePolicyTest
 {
     [TestMethod]
+    public void StaleLatestResponseCannotDowngradeCurrentBuild()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var release = new ReleaseUpdateCandidate(ReleaseUpdatePolicy.ForkRepository, "fix-older", new string('a', 40),
+            "", "", "", "", now.AddDays(-1));
+        Assert.IsFalse(release.IsNewer("2.15.1", "different", "fix-current", now));
+        Assert.IsTrue((release with { Tag = "fix-newer", PublishedAt = now.AddHours(1) })
+            .IsNewer("2.15.1", "different", "fix-current", now));
+    }
+
+    [TestMethod]
     public void ReleaseIdentityIsEmbeddedByBuild()
     {
         var expected = Environment.GetEnvironmentVariable("PCL_EXPECTED_RELEASE_TAG");
@@ -18,6 +29,7 @@ public class ReleaseUpdatePolicyTest
             return;
         }
         Assert.AreEqual(expected, ReleaseUpdatePolicy.CurrentReleaseTag);
+        Assert.IsNotNull(ReleaseUpdatePolicy.CurrentBuildTime);
     }
 
     private static JsonObject Release(string repo, string tag, bool arm64 = false)

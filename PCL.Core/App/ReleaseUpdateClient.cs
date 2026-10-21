@@ -21,9 +21,10 @@ public sealed record RepositoryUpdateResult(string Repository, ReleaseUpdateCand
 /// <summary>Independent repository caches and bounded retries for transient failures.</summary>
 public sealed class ReleaseUpdateClient
 {
-    private sealed record CacheEntry(RepositoryUpdateResult Result, DateTimeOffset ExpiresAt);
+    private sealed record CacheEntry(RepositoryUpdateResult Result, DateTimeOffset ExpiresAt, string RouteKey);
     private readonly HttpClient _client;
     private readonly bool _arm64;
+    private readonly Func<string, IReadOnlyList<string>> _routes;
     private readonly Func<DateTimeOffset> _clock;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly Action<string, Exception>? _log;
@@ -32,13 +33,15 @@ public sealed class ReleaseUpdateClient
     private RepositoryUpdateResult[] _results = [];
 
     public ReleaseUpdateClient(HttpClient client, bool arm64, Func<DateTimeOffset>? clock = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null, Action<string, Exception>? log = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, Action<string, Exception>? log = null,
+        Func<string, IReadOnlyList<string>>? routes = null)
     {
         _client = client;
         _arm64 = arm64;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _delay = delay ?? ((duration, token) => Task.Delay(duration, token));
         _log = log;
+        _routes = routes ?? (url => new[] { url });
     }
 
     public RepositoryUpdateResult[] Results => Volatile.Read(ref _results);
@@ -60,22 +63,37 @@ public sealed class ReleaseUpdateClient
 
     private async Task<CacheEntry> CheckOneAsync(string repository, bool force, CancellationToken token)
     {
-        if (_cache.TryGetValue(repository, out var cached) && _clock() < cached.ExpiresAt &&
+        var routeKey = string.Join("|", _routes($"https://api.github.com/repos/{repository}/releases/latest"));
+        if (_cache.TryGetValue(repository, out var cached) && cached.RouteKey == routeKey && _clock() < cached.ExpiresAt &&
             (!force || cached.Result.Failure == UpdateCheckFailure.RateLimited)) return cached;
         var result = await FetchAsync(repository, token).ConfigureAwait(false);
         var expires = result.Release is not null ? _clock().AddMinutes(5)
             : result.RetryAt ?? _clock().AddSeconds(15);
-        return new(result, expires);
+        return new(result, expires, routeKey);
     }
 
     private async Task<RepositoryUpdateResult> FetchAsync(string repository, CancellationToken token)
     {
-        for (var attempt = 1; attempt <= 3; attempt++)
+        var routes = _routes($"https://api.github.com/repos/{repository}/releases/latest");
+        RepositoryUpdateResult? result = null;
+        foreach (var route in routes)
+        {
+            result = await FetchRouteAsync(repository, route, token).ConfigureAwait(false);
+            if (result.Release is not null) return result;
+        }
+        return result ?? throw new InvalidOperationException("No update routes configured");
+    }
+
+    private async Task<RepositoryUpdateResult> FetchRouteAsync(string repository, string url, CancellationToken token)
+    {
+        // Spend retries on the final direct route; fail over quickly from an unavailable proxy.
+        var attempts = url.StartsWith("https://api.github.com/", StringComparison.Ordinal) ? 3 : 1;
+        for (var attempt = 1; attempt <= attempts; attempt++)
         {
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get,
-                    $"https://api.github.com/repos/{repository}/releases/latest");
+                    url);
                 request.Headers.UserAgent.ParseAdd("PCL-CE-Fix-Updater/1.0");
                 request.Headers.Accept.ParseAdd("application/vnd.github+json");
                 using var response = await _client.SendAsync(request, token).ConfigureAwait(false);
@@ -93,7 +111,7 @@ public sealed class ReleaseUpdateClient
                 if (!response.IsSuccessStatusCode)
                 {
                     var transient = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.RequestTimeout;
-                    if (transient && attempt < 3)
+                    if (transient && attempt < attempts)
                     {
                         await BackoffAsync(attempt, token).ConfigureAwait(false);
                         continue;
@@ -113,12 +131,12 @@ public sealed class ReleaseUpdateClient
             }
             catch (OperationCanceledException ex) when (!token.IsCancellationRequested)
             {
-                if (attempt < 3) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
+                if (attempt < attempts) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
                 return Failure(repository, UpdateCheckFailure.Timeout, "连接 GitHub 超时，已自动重试，请稍后重试。", ex);
             }
             catch (HttpRequestException ex)
             {
-                if (attempt < 3) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
+                if (attempt < attempts) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
                 var dns = ex.HttpRequestError == HttpRequestError.NameResolutionError;
                 return Failure(repository, dns ? UpdateCheckFailure.Dns : UpdateCheckFailure.Network,
                     dns ? "GitHub 域名解析失败（DNS），请检查网络后重试。" : "无法连接 GitHub，已自动重试，请检查网络后重试。", ex);

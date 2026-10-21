@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using PCL.Core.App;
+using PCL.Core.App.Region;
 using PCL.Core.UI;
 using PCL.Core.Utils.OS;
 using PCL.Network;
@@ -15,15 +16,18 @@ public static class ForkUpdateService
         new HttpClient { Timeout = TimeSpan.FromSeconds(8) },
         System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
         System.Runtime.InteropServices.Architecture.Arm64,
-        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"));
+        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
     private static readonly SemaphoreSlim InstallLock = new(1, 1);
     private static readonly object RefreshLock = new();
     private static Task _backgroundRefresh = Task.CompletedTask;
     public static RepositoryUpdateResult[] Results => Client.Results;
+    private static readonly RegionClassification DeviceRegion = RegionPolicy.Evaluate(RegionPolicy.ReadWindowsSignals()).Classification;
+    public static IReadOnlyList<string> GetRoutes(string url) =>
+        GitHubUpdateRoutes.Get(url, Config.Update.NetworkMode, DeviceRegion);
     public static bool Installing { get; private set; }
 
     public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(ModBase.versionBaseName,
-        Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag);
+        Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag, ReleaseUpdatePolicy.CurrentBuildTime);
 
     public static Task<RepositoryUpdateResult[]> CheckAsync(bool force = false) => Client.CheckAsync(force);
 
@@ -74,14 +78,14 @@ public static class ForkUpdateService
             var source = release.IsFork ? "PCL_CE_Fix（保留区域限制补丁）" : "上游 PCL CE（原版，可能恢复区域限制）";
             if (ModMain.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
                     "确认更新来源", "安装并重启", "取消", isWarn: !release.IsFork) != 1) return;
-            output = Path.Combine(ModBase.exePath, "PCL", "Plain Craft Launcher Community Edition.exe");
+            output = Path.Combine(Basics.ExecutableDirectory, "PCL", "Updates", Guid.NewGuid().ToString("N"), "Launcher.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             // Reuse the existing taskbar download UI, then verify the exact asset selected by the player.
             var download = new ModLoader.LoaderCombo<int>($"更新 {source}",
                 new List<ModLoader.LoaderBase>
                 {
                     new LoaderDownload("下载启动器", new List<DownloadFile>
-                        { new(new[] { release.DownloadUrl }, output, new ModBase.FileChecker(hash: release.Sha256)) })
+                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new ModBase.FileChecker(hash: release.Sha256)) })
                 });
             UpdateManager.updateLoader = null;
             download.Start();
@@ -91,7 +95,7 @@ public static class ForkUpdateService
             var hash = ModBase.GetFileSHA256(output);
             if (!string.Equals(hash, release.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("下载文件的 SHA-256 校验失败，已停止安装。");
-            UpdateManager.UpdateRestart(true);
+            UpdateManager.UpdateRestart(true, verifiedSource: output, expectedSha256: release.Sha256);
         }
         catch (Exception ex)
         {

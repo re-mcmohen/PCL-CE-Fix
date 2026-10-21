@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using PCL.Core.App;
@@ -53,39 +53,29 @@ public static class UpdateManager
         ForkUpdateService.NotifyInBackground();
     }
 
-    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true)
+    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true,
+        string? verifiedSource = null, string? expectedSha256 = null)
     {
-        try
+        var fileName = verifiedSource ?? Path.Combine(ModBase.exePath, "PCL", "Plain Craft Launcher Community Edition.exe");
+        if (!File.Exists(fileName)) throw new FileNotFoundException("未找到更新文件", fileName);
+        // Run a separate copy of our updater, including when switching to an upstream release.
+        // Running the current executable itself would keep the destination locked.
+        var helper = verifiedSource is null ? fileName
+            : Path.Combine(Path.GetDirectoryName(fileName)!, "PCL_CE_Fix_Updater.exe");
+        if (verifiedSource is not null) File.Copy(Basics.ExecutablePath, helper, overwrite: false);
+        var start = new ProcessStartInfo(helper)
         {
-            var fileName = ModBase.exePath + @"PCL\Plain Craft Launcher Community Edition.exe";
-            if (!File.Exists(fileName))
-            {
-                ModBase.Log("[System] 更新失败：未找到更新文件");
-                return;
-            }
-
-            // id old new restart
-            var text =
-                $"update {Process.GetCurrentProcess().Id} \"{Basics.ExecutablePath}\" \"{fileName}\" {(triggerRestart ? "true" : "false")}";
-            ModBase.Log("[System] 更新程序启动，参数：" + text);
-            Process.Start(new ProcessStartInfo(fileName)
-                { WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true, Arguments = text });
-            if (triggerRestartAndByEnd)
-            {
-                ModMain.frmMain.EndProgram(false, true);
-                ModBase.Log("[System] 已由于更新强制结束程序");
-            }
-        }
-        catch (Win32Exception ex)
+            UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(Basics.ExecutablePath)!
+        };
+        foreach (var argument in new[] { "update", Environment.ProcessId.ToString(), Basics.ExecutablePath,
+                     fileName, triggerRestart ? "true" : "false" }) start.ArgumentList.Add(argument);
+        if (expectedSha256 is not null) start.ArgumentList.Add(expectedSha256);
+        using var updater = Process.Start(start) ?? throw new IOException("无法启动更新程序");
+        if (triggerRestartAndByEnd)
         {
-            ModBase.Log(ex, "自动更新时触发 Win32 错误，疑似被拦截");
-            ModMain.MyMsgBox(
-                Lang.Text("Update.Error.UpdateBlockedMessage", ModBase.exePath),
-                Lang.Text("Update.Error.UpdateBlocked"),
-                Lang.Text("Common.Action.Confirm"),
-                "",
-                "",
-                true);
+            ModMain.frmMain.EndProgram(false, true);
+            ModBase.Log("[System] 已由于更新强制结束程序");
         }
     }
 

@@ -103,7 +103,7 @@ jobs:
         env:
           PCL_EXPECTED_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         if: matrix.arch == 'x64'
-        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest"
+        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest|FullyQualifiedName~UpdateHelperTest|FullyQualifiedName~GitHubUpdateRoutesTest"
       - name: Publish
         env:
           PCL_WRITE_SECRET: '1'
@@ -161,7 +161,7 @@ jobs:
               f"上游 dev：{p['upstream']}\n\n控制版本：{p['control']}\n\n"
               '直接提供 x64 / ARM64 单文件 EXE，与上游一致，不包含 .NET 运行时。运行前请安装对应架构的 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。\n\n'
               '此版本跟随上游开发分支；未配置自有 API 凭据时，微软登录、CurseForge 等服务可能不可用。'
-              '启动提醒可选择不再显示；更新页同时检查本仓库和上游，可明确选择保留补丁更新或切回上游。安装前校验 SHA-256。\n', encoding='utf-8')
+              '启动提醒可选择不再显示；更新页同时检查本仓库和上游，可明确选择保留补丁更新或切回上游。安装前后校验 SHA-256；文件占用时自动重试替换，失败时明确提示。\n\n更新页新增自动 / GH-Proxy 加速 / GitHub 直连选项，大陆设备区域默认优先加速，失败回退直连。\n', encoding='utf-8')
           PY
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$SOURCE_SHA" --title "PCL_CE_Fix $TAG" --notes-file release-notes.md --draft

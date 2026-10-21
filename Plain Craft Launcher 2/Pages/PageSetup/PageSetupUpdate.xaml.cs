@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using System.Windows.Controls;
 using PCL.Core.App;
 using PCL.Core.Utils.OS;
 
@@ -20,6 +21,7 @@ public partial class PageSetupUpdate
             TextCurrentVersion.Text = $"当前：PCL_CE_Fix {ModBase.versionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
             CheckStartupUpdate.Checked = Config.Update.UpdateMode != LauncherAutoUpdateBehavior.Disable;
             CheckHideNotice.Checked = Config.Update.HideCommunityNotice;
+            ComboNetworkMode.SelectedIndex = (int)Config.Update.NetworkMode;
             _initializing = false;
             CheckUpdate();
         };
@@ -33,11 +35,18 @@ public partial class PageSetupUpdate
             ? LauncherAutoUpdateBehavior.AnnounceOnly : LauncherAutoUpdateBehavior.Disable;
     }
 
+    private void NetworkModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
+        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
+        CheckUpdate();
+    }
+
     public async void CheckUpdate()
     {
         if (_checking) return;
         _checking = true;
-        BtnCheckAgain.IsEnabled = BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
+        ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
         _fork = _upstream = null;
         TextForkStatus.Text = TextUpstreamStatus.Text = "正在检查…";
         TextForkNotes.Text = TextUpstreamNotes.Text = "";
@@ -56,7 +65,7 @@ public partial class PageSetupUpdate
                     continue;
                 }
                 var newer = ForkUpdateService.IsNewer(release);
-                status.Text = $"{release.Tag} · {(newer ? "有可用更新" : fork ? "当前已是此发布版本" : "可选择切回此上游版本")}";
+                status.Text = $"{release.Tag} · {(newer ? "有可用更新" : fork ? "无需更新（相同或较早的发布）" : "可选择切回此上游版本")}";
                 notes.Text = release.Notes.Length > 1200 ? release.Notes[..1200] + "…" : release.Notes;
                 button.IsEnabled = !ForkUpdateService.Installing && (!fork || newer);
                 if (fork) _fork = release; else _upstream = release;
@@ -67,7 +76,7 @@ public partial class PageSetupUpdate
             ModBase.Log(ex, "[Update] 检查失败");
             TextForkStatus.Text = TextUpstreamStatus.Text = "检查失败，请稍后重试。";
         }
-        finally { _checking = false; BtnCheckAgain.IsEnabled = true; }
+        finally { _checking = false; ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = true; }
     }
 
     private async Task InstallAsync(ReleaseUpdateCandidate? release)

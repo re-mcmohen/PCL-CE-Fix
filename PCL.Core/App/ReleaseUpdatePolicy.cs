@@ -7,14 +7,14 @@ using PCL.Core.Utils;
 namespace PCL.Core.App;
 
 public sealed record ReleaseUpdateCandidate(string Repository, string Tag, string Commit,
-    string DownloadUrl, string Sha256, string Notes, string PageUrl)
+    string DownloadUrl, string Sha256, string Notes, string PageUrl, DateTimeOffset? PublishedAt = null)
 {
     public bool IsFork => Repository == ReleaseUpdatePolicy.ForkRepository;
 
-    public bool IsNewer(string currentVersion, string currentCommit, string currentTag = "") => IsFork
-        ? (string.IsNullOrEmpty(currentTag)
+    public bool IsNewer(string currentVersion, string currentCommit, string currentTag = "", DateTimeOffset? currentBuildTime = null) => IsFork
+        ? (!(PublishedAt is { } published && currentBuildTime is { } built && published < built) && (string.IsNullOrEmpty(currentTag)
             ? !string.Equals(Commit, currentCommit, StringComparison.OrdinalIgnoreCase)
-            : Tag != currentTag)
+            : Tag != currentTag))
         : SemVer.TryParse(Tag.TrimStart('v'), out var remote) &&
           SemVer.TryParse(currentVersion, out var current) && remote! > current!;
 }
@@ -24,6 +24,10 @@ public static class ReleaseUpdatePolicy
     public static string CurrentReleaseTag { get; } = typeof(ReleaseUpdatePolicy).Assembly
         .GetCustomAttributes<AssemblyMetadataAttribute>()
         .FirstOrDefault(attribute => attribute.Key == "PCLCEFix.ReleaseTag")?.Value ?? "";
+    public static DateTimeOffset? CurrentBuildTime { get; } = DateTimeOffset.TryParse(
+        typeof(ReleaseUpdatePolicy).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "PCLCEFix.BuildTime")?.Value,
+        out var buildTime) ? buildTime : null;
     public const string ForkRepository = "re-mcmohen/PCL-CE-Fix";
     public const string UpstreamRepository = "PCL-Community/PCL-CE";
 
@@ -51,6 +55,7 @@ public static class ReleaseUpdatePolicy
             throw new FormatException("Fork release must identify its source commit");
         return new(repository, tag, commit, url, digest[7..].ToLowerInvariant(),
             release["body"]?.GetValue<string>() ?? "暂无更新说明。",
-            $"https://github.com/{repository}/releases/tag/{tag}");
+            $"https://github.com/{repository}/releases/tag/{tag}",
+            DateTimeOffset.TryParse(release["published_at"]?.GetValue<string>(), out var published) ? published : null);
     }
 }

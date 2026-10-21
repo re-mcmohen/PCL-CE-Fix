@@ -50,6 +50,23 @@ public class ReleaseUpdateClientTest
         new(http, false, clock, (_, _) => Task.CompletedTask);
 
     [TestMethod]
+    public async Task AcceleratorFailureFallsBackToVerifiedDirectRelease()
+    {
+        var handler = new Handler((repo, count) => count == 1
+            ? new(HttpStatusCode.BadGateway) : Success(repo));
+        using var http = new HttpClient(handler);
+        var client = new ReleaseUpdateClient(http, false, delay: (_, _) => Task.CompletedTask,
+            routes: url => GitHubUpdateRoutes.Get(url, UpdateNetworkMode.Accelerated, PCL.Core.App.Region.RegionClassification.Other));
+        var results = await client.CheckAsync();
+        foreach (var result in results)
+        {
+            Assert.IsNotNull(result.Release);
+            Assert.AreEqual(2, handler.Calls[result.Repository]);
+            Assert.IsTrue(result.Release.DownloadUrl.StartsWith("https://github.com/"));
+        }
+    }
+
+    [TestMethod]
     public async Task SuccessfulResultsAreCachedForFiveMinutesAndForceRefreshes()
     {
         var now = DateTimeOffset.UtcNow;
