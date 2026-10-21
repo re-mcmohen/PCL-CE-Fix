@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup Condition="'$(PCLCEFixReleaseTag)' != ''">
+        <AssemblyMetadata Include="PCLCEFix.ReleaseTag" Value="$(PCLCEFixReleaseTag)" />
+    </ItemGroup>
     <!-- 项目属性 -->
     <PropertyGroup>
         <AssemblyTitle>PCL.Core</AssemblyTitle>
