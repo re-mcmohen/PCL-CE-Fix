@@ -1,0 +1,175 @@
+name: PCL_CE_Fix Sync and Release
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'fix/**'
+      - 'README.md'
+      - 'README-EN.md'
+      - 'README-ZH_TW.md'
+      - '.github/workflows/fix-sync-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pcl-ce-fix-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository != 'PCL-Community/PCL-CE' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      build: ${{ steps.source.outputs.build }}
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: source
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+      - name: Prepare patched source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          git fetch https://github.com/PCL-Community/PCL-CE.git refs/heads/dev
+          upstream=$(git rev-parse FETCH_HEAD)
+          control=$(git -C ../control rev-parse HEAD)
+          tag="fix-${upstream:0:12}-${control:0:12}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Skip only a completed release. Failed builds are retried on the next run.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/release-state; then
+            if [ "$(cat /tmp/release-state)" = false ]; then
+              echo 'build=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          old=$(git ls-remote origin refs/heads/patched-dev | cut -f1)
+          git checkout --detach "$upstream"
+          python ../control/fix/apply.py .
+          cp -r ../control/fix ./fix
+          cp ../control/README.md ../control/README-EN.md ../control/README-ZH_TW.md .
+          python - "$upstream" "$control" "$tag" <<'PY'
+          import json, sys
+          from pathlib import Path
+          policy = Path('PCL.Core/App/ReleaseUpdatePolicy.cs')
+          text = policy.read_text(encoding='utf-8')
+          marker = 'public const string CurrentReleaseTag = "";'
+          if text.count(marker) != 1:
+              raise RuntimeError('Release identity marker missing or ambiguous')
+          policy.write_text(text.replace(marker,
+              'public const string CurrentReleaseTag = ' + json.dumps(sys.argv[3]) + ';'), encoding='utf-8')
+          Path('fix-provenance.json').write_text(json.dumps({
+              'upstream': sys.argv[1], 'control': sys.argv[2],
+              'repository': 'PCL-Community/PCL-CE', 'branch': 'dev'
+          }, indent=2) + '\n', encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PCL.Core PCL.Core.Test "Plain Craft Launcher 2" fix README.md README-EN.md README-ZH_TW.md fix-provenance.json
+          # Replay the fork patch on the original upstream history.
+          git commit -m "fix: apply PCL_CE_Fix overlay to $upstream"
+          sha=$(git rev-parse HEAD)
+          git push "--force-with-lease=refs/heads/patched-dev:$old" origin "$sha:refs/heads/patched-dev"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, ARM64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Test region policy
+        if: matrix.arch == 'x64'
+        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest"
+      - name: Publish
+        env:
+          PCL_WRITE_SECRET: '1'
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+          PCL_GITHUB_SHA: ${{ needs.prepare.outputs.sha }}
+        run: dotnet publish "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }} --no-self-contained -o artifact
+      - name: Prepare executable
+        shell: pwsh
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Move-Item 'artifact/Plain Craft Launcher 2.exe' "PCL_CE_Fix_$env:ARCH.exe"
+          Get-Item "PCL_CE_Fix_$env:ARCH.exe" | Select-Object Name, Length
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: PCL_CE_Fix_${{ matrix.arch }}
+          path: PCL_CE_Fix_*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: PCL_CE_Fix_*
+          path: release
+          merge-multiple: true
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum ./*.exe > SHA256SUMS.txt)
+          cp fix-provenance.json release/
+          cp LICENSE release/LICENSE-Apache-2.0.txt
+          cp "Plain Craft Launcher 2/LICENCE" release/LICENCE-PCL.txt
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = json.loads(Path('fix-provenance.json').read_text())
+          Path('release-notes.md').write_text(
+              'PCL_CE_Fix：第三方独立修改版本，解除基于地区的安装与文件补全限制。\n\n'
+              f"上游 dev：{p['upstream']}\n\n控制版本：{p['control']}\n\n"
+              '直接提供 x64 / ARM64 单文件 EXE，与上游一致，不包含 .NET 运行时。运行前请安装对应架构的 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。\n\n'
+              '此版本跟随上游开发分支；未配置自有 API 凭据时，微软登录、CurseForge 等服务可能不可用。'
+              '启动提醒可选择不再显示；更新页同时检查本仓库和上游，可明确选择保留补丁更新或切回上游。安装前校验 SHA-256。\n', encoding='utf-8')
+          PY
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$SOURCE_SHA" --title "PCL_CE_Fix $TAG" --notes-file release-notes.md --draft
+          fi
+          gh release upload "$TAG" release/* --clobber
+          gh release edit "$TAG" --draft=false --latest --notes-file release-notes.md

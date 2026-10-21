@@ -346,3 +346,5 @@ MaskFiles/
 # macOS
 
 **/.DS_Store
+# Local-only fork deployment and build notes
+/fix/MAINTENANCE.local.md
