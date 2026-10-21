@@ -1,0 +1,1964 @@
+diff --git a/PCL.Core.Test/GitHubUpdateRoutesTest.cs b/PCL.Core.Test/GitHubUpdateRoutesTest.cs
+new file mode 100644
+index 00000000..03ea060d
+--- /dev/null
++++ b/PCL.Core.Test/GitHubUpdateRoutesTest.cs
+@@ -0,0 +1,42 @@
++using System;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++using PCL.Core.App;
++using PCL.Core.App.Region;
++
++namespace PCL.Core.Test;
++
++[TestClass]
++public class GitHubUpdateRoutesTest
++{
++    private const string Url = "https://api.github.com/repos/re-mcmohen/PCL-CE-Fix/releases/latest";
++
++    [TestMethod]
++    public void MainlandAutoPrefersAccelerationAndKeepsDirectFallback()
++    {
++        var routes = GitHubUpdateRoutes.Get(Url, UpdateNetworkMode.Auto, RegionClassification.Mainland);
++        CollectionAssert.AreEqual(new[] { GitHubUpdateRoutes.Accelerator + Url, Url }, new System.Collections.Generic.List<string>(routes));
++    }
++
++    [TestMethod]
++    public void OtherAndUnknownRegionsAutoUseDirect()
++    {
++        Assert.AreEqual(Url, GitHubUpdateRoutes.Get(Url, UpdateNetworkMode.Auto, RegionClassification.Other)[0]);
++        Assert.AreEqual(1, GitHubUpdateRoutes.Get(Url, UpdateNetworkMode.Auto, RegionClassification.Unknown).Count);
++    }
++
++    [TestMethod]
++    public void ExplicitModeOverridesRegionForAssetsAndPages()
++    {
++        const string asset = "https://github.com/re-mcmohen/PCL-CE-Fix/releases/download/fix-test/PCL_CE_Fix_x64.exe";
++        Assert.AreEqual(asset, GitHubUpdateRoutes.Get(asset, UpdateNetworkMode.Direct, RegionClassification.Mainland)[0]);
++        Assert.AreEqual(GitHubUpdateRoutes.Accelerator + asset,
++            GitHubUpdateRoutes.Get(asset, UpdateNetworkMode.Accelerated, RegionClassification.Other)[0]);
++    }
++
++    [TestMethod]
++    public void RejectsNonGitHubAndInsecureUrls()
++    {
++        foreach (var url in new[] { "http://github.com/a", "https://github.com.evil.test/a", "https://user@github.com/a", "https://api.github.com:8443/a" })
++            Assert.ThrowsExactly<ArgumentException>(() => GitHubUpdateRoutes.Get(url, UpdateNetworkMode.Auto, RegionClassification.Mainland));
++    }
++}
+diff --git a/PCL.Core.Test/ReleaseUpdateClientTest.cs b/PCL.Core.Test/ReleaseUpdateClientTest.cs
+new file mode 100644
+index 00000000..10610e2e
+--- /dev/null
++++ b/PCL.Core.Test/ReleaseUpdateClientTest.cs
+@@ -0,0 +1,227 @@
++using System;
++using System.Collections.Concurrent;
++using System.Net;
++using System.Net.Http;
++using System.Net.Http.Headers;
++using System.Text;
++using System.Text.Json.Nodes;
++using System.Threading;
++using System.Threading.Tasks;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++using PCL.Core.App;
++
++namespace PCL.Core.Test;
++
++[TestClass]
++public class ReleaseUpdateClientTest
++{
++    private sealed class Handler(Func<string, int, HttpResponseMessage> respond) : HttpMessageHandler
++    {
++        public ConcurrentDictionary<string, int> Calls { get; } = new();
++
++        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            token.ThrowIfCancellationRequested();
++            var repo = request.RequestUri!.AbsolutePath.Contains("/re-mcmohen/")
++                ? ReleaseUpdatePolicy.ForkRepository : ReleaseUpdatePolicy.UpstreamRepository;
++            return Task.FromResult(respond(repo, Calls.AddOrUpdate(repo, 1, (_, count) => count + 1)));
++        }
++    }
++
++    private static HttpResponseMessage Success(string repo)
++    {
++        var fork = repo == ReleaseUpdatePolicy.ForkRepository;
++        var tag = fork ? "fix-test" : "v2.15.1";
++        var file = fork ? "PCL_CE_Fix_x64.exe" : "PCL2_CE_Release_x64.exe";
++        var json = new JsonObject
++        {
++            ["tag_name"] = tag, ["target_commitish"] = new string('a', 40),
++            ["draft"] = false, ["prerelease"] = false,
++            ["assets"] = new JsonArray(new JsonObject
++            {
++                ["name"] = file, ["digest"] = "sha256:" + new string('b', 64),
++                ["browser_download_url"] = $"https://github.com/{repo}/releases/download/{tag}/{file}"
++            })
++        };
++        return new(HttpStatusCode.OK) { Content = new StringContent(json.ToJsonString(), Encoding.UTF8, "application/json") };
++    }
++
++    private static ReleaseUpdateClient Client(HttpClient http, Func<DateTimeOffset>? clock = null) =>
++        new(http, false, clock, (_, _) => Task.CompletedTask);
++
++    [TestMethod]
++    public async Task AcceleratorFailureFallsBackToVerifiedDirectRelease()
++    {
++        var handler = new Handler((repo, count) => count == 1
++            ? new(HttpStatusCode.BadGateway) : Success(repo));
++        using var http = new HttpClient(handler);
++        var client = new ReleaseUpdateClient(http, false, delay: (_, _) => Task.CompletedTask,
++            routes: url => GitHubUpdateRoutes.Get(url, UpdateNetworkMode.Accelerated, PCL.Core.App.Region.RegionClassification.Other));
++        var results = await client.CheckAsync();
++        foreach (var result in results)
++        {
++            Assert.IsNotNull(result.Release);
++            Assert.AreEqual(2, handler.Calls[result.Repository]);
++            Assert.IsTrue(result.Release.DownloadUrl.StartsWith("https://github.com/"));
++        }
++    }
++
++    [TestMethod]
++    public async Task SuccessfulResultsAreCachedForFiveMinutesAndForceRefreshes()
++    {
++        var now = DateTimeOffset.UtcNow;
++        var handler = new Handler((repo, _) => Success(repo));
++        using var http = new HttpClient(handler);
++        var client = Client(http, () => now);
++        await client.CheckAsync();
++        now = now.AddMinutes(4);
++        await client.CheckAsync();
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        await client.CheckAsync(force: true);
++        Assert.AreEqual(2, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        now = now.AddMinutes(6);
++        await client.CheckAsync();
++        Assert.AreEqual(3, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task TransientServerFailureRetriesWithinTheSameCheck()
++    {
++        var handler = new Handler((repo, count) => repo == ReleaseUpdatePolicy.ForkRepository && count < 3
++            ? new(HttpStatusCode.ServiceUnavailable) : Success(repo));
++        using var http = new HttpClient(handler);
++        var results = await Client(http).CheckAsync();
++        Assert.IsNotNull(results[0].Release);
++        Assert.IsNotNull(results[1].Release);
++        Assert.AreEqual(3, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.UpstreamRepository]);
++    }
++
++    [TestMethod]
++    public async Task FailedSourceExpiresSoonerWithoutInvalidatingHealthySource()
++    {
++        var now = DateTimeOffset.UtcNow;
++        var failing = true;
++        var handler = new Handler((repo, _) => repo == ReleaseUpdatePolicy.ForkRepository && failing
++            ? new(HttpStatusCode.ServiceUnavailable) : Success(repo));
++        using var http = new HttpClient(handler);
++        var client = Client(http, () => now);
++        var first = await client.CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.Server, first[0].Failure);
++        Assert.IsNotNull(first[1].Release);
++        failing = false;
++        now = now.AddSeconds(10);
++        await client.CheckAsync();
++        Assert.AreEqual(3, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        now = now.AddSeconds(6);
++        var recovered = await client.CheckAsync();
++        Assert.IsNotNull(recovered[0].Release);
++        Assert.AreEqual(4, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.UpstreamRepository]);
++    }
++
++    [TestMethod]
++    [DataRow(403)]
++    [DataRow(429)]
++    public async Task RateLimitHonorsRetryAfterEvenOnManualRefresh(int status)
++    {
++        var now = DateTimeOffset.UtcNow;
++        var handler = new Handler((repo, _) =>
++        {
++            if (repo != ReleaseUpdatePolicy.ForkRepository) return Success(repo);
++            var response = new HttpResponseMessage((HttpStatusCode)status);
++            response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(2));
++            response.Headers.Add("X-RateLimit-Remaining", "0");
++            return response;
++        });
++        using var http = new HttpClient(handler);
++        var client = Client(http, () => now);
++        var result = await client.CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.RateLimited, result[0].Failure);
++        Assert.AreEqual(now.AddMinutes(2), result[0].RetryAt);
++        now = now.AddMinutes(1);
++        await client.CheckAsync(force: true);
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++        now = now.AddMinutes(2);
++        await client.CheckAsync();
++        Assert.AreEqual(2, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task PrimaryRateLimitUsesResetHeader()
++    {
++        var now = DateTimeOffset.FromUnixTimeSeconds(1000);
++        var handler = new Handler((repo, _) =>
++        {
++            if (repo != ReleaseUpdatePolicy.ForkRepository) return Success(repo);
++            var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
++            response.Headers.Add("X-RateLimit-Remaining", "0");
++            response.Headers.Add("X-RateLimit-Reset", "1300");
++            return response;
++        });
++        using var http = new HttpClient(handler);
++        var results = await Client(http, () => now).CheckAsync();
++        Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(1300), results[0].RetryAt);
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task PermissionDenialIsNotReportedAsRateLimitAndDoesNotRetry()
++    {
++        var handler = new Handler((repo, _) => repo == ReleaseUpdatePolicy.ForkRepository
++            ? new(HttpStatusCode.Forbidden) : Success(repo));
++        using var http = new HttpClient(handler);
++        var results = await Client(http).CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.Forbidden, results[0].Failure);
++        StringAssert.Contains(results[0].Error!, "403");
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task DnsErrorsAreClassifiedAndRetriesAreBounded()
++    {
++        var handler = new Handler((repo, _) => repo == ReleaseUpdatePolicy.ForkRepository
++            ? throw new HttpRequestException(HttpRequestError.NameResolutionError, "DNS failed") : Success(repo));
++        using var http = new HttpClient(handler);
++        var results = await Client(http).CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.Dns, results[0].Failure);
++        StringAssert.Contains(results[0].Error!, "DNS");
++        Assert.AreEqual(3, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task TimeoutIsClassifiedSeparately()
++    {
++        var handler = new Handler((repo, _) => repo == ReleaseUpdatePolicy.ForkRepository
++            ? throw new TaskCanceledException("timeout") : Success(repo));
++        using var http = new HttpClient(handler);
++        var results = await Client(http).CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.Timeout, results[0].Failure);
++        Assert.AreEqual(3, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task InvalidReleaseIsNotRetriedAsNetworkFailure()
++    {
++        var handler = new Handler((repo, _) => repo == ReleaseUpdatePolicy.ForkRepository
++            ? new(HttpStatusCode.OK) { Content = new StringContent("invalid JSON") } : Success(repo));
++        using var http = new HttpClient(handler);
++        var results = await Client(http).CheckAsync();
++        Assert.AreEqual(UpdateCheckFailure.InvalidRelease, results[0].Failure);
++        Assert.AreEqual(1, handler.Calls[ReleaseUpdatePolicy.ForkRepository]);
++    }
++
++    [TestMethod]
++    public async Task PreCanceledCheckDoesNotPreventLaterChecks()
++    {
++        var handler = new Handler((repo, _) => Success(repo));
++        using var http = new HttpClient(handler);
++        var client = Client(http);
++        using var cancellation = new CancellationTokenSource();
++        cancellation.Cancel();
++        await Assert.ThrowsAsync<OperationCanceledException>(() => client.CheckAsync(token: cancellation.Token));
++        var results = await client.CheckAsync();
++        Assert.IsNotNull(results[0].Release);
++        Assert.IsNotNull(results[1].Release);
++    }
++}
+diff --git a/PCL.Core.Test/ReleaseUpdatePolicyTest.cs b/PCL.Core.Test/ReleaseUpdatePolicyTest.cs
+new file mode 100644
+index 00000000..c76fb2d7
+--- /dev/null
++++ b/PCL.Core.Test/ReleaseUpdatePolicyTest.cs
+@@ -0,0 +1,121 @@
++using System;
++using System.Text.Json.Nodes;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++using PCL.Core.App;
++
++namespace PCL.Core.Test;
++
++[TestClass]
++public class ReleaseUpdatePolicyTest
++{
++    [TestMethod]
++    public void StaleLatestResponseCannotDowngradeCurrentBuild()
++    {
++        var now = DateTimeOffset.UtcNow;
++        var release = new ReleaseUpdateCandidate(ReleaseUpdatePolicy.ForkRepository, "fix-older", new string('a', 40),
++            "", "", "", "", now.AddDays(-1));
++        Assert.IsFalse(release.IsNewer("2.15.1", "different", "fix-current", now));
++        Assert.IsTrue((release with { Tag = "fix-newer", PublishedAt = now.AddHours(1) })
++            .IsNewer("2.15.1", "different", "fix-current", now));
++    }
++
++    [TestMethod]
++    public void ReleaseIdentityIsEmbeddedByBuild()
++    {
++        var expected = Environment.GetEnvironmentVariable("PCL_EXPECTED_RELEASE_TAG");
++        if (string.IsNullOrEmpty(expected))
++        {
++            Assert.Inconclusive("Set PCL_EXPECTED_RELEASE_TAG and build with -p:PCLCEFixReleaseTag to verify CI metadata.");
++            return;
++        }
++        Assert.AreEqual(expected, ReleaseUpdatePolicy.CurrentReleaseTag);
++        Assert.IsNotNull(ReleaseUpdatePolicy.CurrentBuildTime);
++    }
++
++    private static JsonObject Release(string repo, string tag, bool arm64 = false)
++    {
++        var file = repo == ReleaseUpdatePolicy.ForkRepository
++            ? $"PCL_CE_Fix_{(arm64 ? "ARM64" : "x64")}.exe"
++            : $"PCL2_CE_Release_{(arm64 ? "ARM64" : "x64")}.exe";
++        return new JsonObject
++        {
++            ["draft"] = false, ["prerelease"] = false, ["tag_name"] = tag,
++            ["target_commitish"] = new string('a', 40), ["body"] = "notes",
++            ["assets"] = new JsonArray(new JsonObject
++            {
++                ["name"] = file, ["digest"] = "sha256:" + new string('b', 64),
++                ["browser_download_url"] = $"https://github.com/{repo}/releases/download/{tag}/{file}"
++            })
++        };
++    }
++
++    [TestMethod]
++    [DataRow(false)]
++    [DataRow(true)]
++    public void ForkChoosesExactArchitecture(bool arm64)
++    {
++        var release = ReleaseUpdatePolicy.Parse(Release(ReleaseUpdatePolicy.ForkRepository, "fix-one", arm64),
++            ReleaseUpdatePolicy.ForkRepository, arm64);
++        StringAssert.EndsWith(release.DownloadUrl, arm64 ? "_ARM64.exe" : "_x64.exe");
++        Assert.IsFalse(release.IsNewer("2.15.1", release.Commit));
++        Assert.IsTrue(release.IsNewer("2.15.1", new string('c', 40)));
++        Assert.IsFalse(release.IsNewer("2.15.1", "", "fix-one"));
++        Assert.IsTrue(release.IsNewer("2.15.1", release.Commit, "fix-older"));
++    }
++
++    [TestMethod]
++    public void ForkUpdateIsDetectedEvenWhenBaseVersionDoesNotChange()
++    {
++        var release = ReleaseUpdatePolicy.Parse(Release(ReleaseUpdatePolicy.ForkRepository, "fix-new"),
++            ReleaseUpdatePolicy.ForkRepository, false);
++        Assert.IsTrue(release.IsNewer("2.15.1", new string('c', 40)));
++    }
++
++    [TestMethod]
++    public void UpstreamUsesSemanticVersionInsteadOfDevBranchName()
++    {
++        var json = Release(ReleaseUpdatePolicy.UpstreamRepository, "v2.15.1");
++        json["target_commitish"] = "dev";
++        var release = ReleaseUpdatePolicy.Parse(json, ReleaseUpdatePolicy.UpstreamRepository, false);
++        Assert.IsTrue(release.IsNewer("2.15.0", ""));
++        Assert.IsFalse(release.IsNewer("2.15.1", ""));
++        Assert.IsFalse(release.IsNewer("2.16.0", ""));
++    }
++
++    [TestMethod]
++    public void MissingArchitectureIsRejected()
++    {
++        Assert.ThrowsExactly<FormatException>(() => ReleaseUpdatePolicy.Parse(
++            Release(ReleaseUpdatePolicy.ForkRepository, "fix-one"), ReleaseUpdatePolicy.ForkRepository, true));
++    }
++
++    [TestMethod]
++    [DataRow("")]
++    [DataRow("sha256:invalid")]
++    [DataRow("sha512:bbbb")]
++    public void MissingOrInvalidChecksumIsRejected(string digest)
++    {
++        var json = Release(ReleaseUpdatePolicy.ForkRepository, "fix-one");
++        json["assets"]![0]!["digest"] = digest;
++        Assert.ThrowsExactly<FormatException>(() => ReleaseUpdatePolicy.Parse(json, ReleaseUpdatePolicy.ForkRepository, false));
++    }
++
++    [TestMethod]
++    public void DownloadFromDifferentRepositoryIsRejected()
++    {
++        var json = Release(ReleaseUpdatePolicy.ForkRepository, "fix-one");
++        json["assets"]![0]!["browser_download_url"] = "https://github.com/other/repository/file.exe";
++        Assert.ThrowsExactly<FormatException>(() => ReleaseUpdatePolicy.Parse(json, ReleaseUpdatePolicy.ForkRepository, false));
++    }
++
++    [TestMethod]
++    public void DraftAndPrereleaseAreRejected()
++    {
++        var json = Release(ReleaseUpdatePolicy.ForkRepository, "fix-one");
++        json["draft"] = true;
++        Assert.ThrowsExactly<FormatException>(() => ReleaseUpdatePolicy.Parse(json, ReleaseUpdatePolicy.ForkRepository, false));
++        json["draft"] = false;
++        json["prerelease"] = true;
++        Assert.ThrowsExactly<FormatException>(() => ReleaseUpdatePolicy.Parse(json, ReleaseUpdatePolicy.ForkRepository, false));
++    }
++}
+diff --git a/PCL.Core.Test/UpdateHelperTest.cs b/PCL.Core.Test/UpdateHelperTest.cs
+new file mode 100644
+index 00000000..127dd091
+--- /dev/null
++++ b/PCL.Core.Test/UpdateHelperTest.cs
+@@ -0,0 +1,89 @@
++using System;
++using System.IO;
++using System.Threading.Tasks;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++using PCL.Core.App.Essentials;
++
++namespace PCL.Core.Test;
++
++[TestClass]
++public class UpdateHelperTest
++{
++    private string _directory = null!;
++    private string Source => Path.Combine(_directory, "new.exe");
++    private string Target => Path.Combine(_directory, "launcher.exe");
++
++    [TestInitialize]
++    public void Initialize()
++    {
++        _directory = Path.Combine(Path.GetTempPath(), "pcl-update-test-" + Guid.NewGuid().ToString("N"));
++        Directory.CreateDirectory(_directory);
++        File.WriteAllText(Source, "new executable");
++        File.WriteAllText(Target, "old executable");
++    }
++
++    [TestCleanup]
++    public void Cleanup() => Directory.Delete(_directory, recursive: true);
++
++    [TestMethod]
++    public void ReplacesExistingExecutableAndVerifiesInstalledHash()
++    {
++        Assert.IsNull(UpdateHelper.Replace(Source, Target, UpdateHelper.ComputeSha256(Source)));
++        Assert.AreEqual("new executable", File.ReadAllText(Target));
++        Assert.AreEqual(2, Directory.GetFiles(_directory).Length);
++    }
++
++    [TestMethod]
++    public void InstallsWhenTargetIsMissing()
++    {
++        File.Delete(Target);
++        Assert.IsNull(UpdateHelper.Replace(Source, Target));
++        Assert.AreEqual("new executable", File.ReadAllText(Target));
++    }
++
++    [TestMethod]
++    public void WrongHashPreservesOldExecutable()
++    {
++        Assert.IsInstanceOfType<InvalidDataException>(UpdateHelper.Replace(Source, Target, new string('0', 64)));
++        Assert.AreEqual("old executable", File.ReadAllText(Target));
++    }
++
++    [TestMethod]
++    public void MissingSourcePreservesOldExecutable()
++    {
++        File.Delete(Source);
++        Assert.IsNotNull(UpdateHelper.Replace(Source, Target));
++        Assert.AreEqual("old executable", File.ReadAllText(Target));
++    }
++
++    [TestMethod]
++    public void RejectsReplacingSourceWithItself()
++    {
++        Assert.IsInstanceOfType<ArgumentException>(UpdateHelper.Replace(Source, Source));
++        Assert.AreEqual("new executable", File.ReadAllText(Source));
++    }
++
++    [TestMethod]
++    public async Task TemporaryWindowsLockRetriesUntilReplacementSucceeds()
++    {
++        var locked = new FileStream(Target, FileMode.Open, FileAccess.Read, FileShare.None);
++        var replace = Task.Run(() => UpdateHelper.Replace(Source, Target, retryTimeout: TimeSpan.FromSeconds(5)));
++        try
++        {
++            await Task.Delay(450);
++            Assert.IsFalse(replace.IsCompleted, "Replacement must wait while the target is locked");
++        }
++        finally { locked.Dispose(); }
++        Assert.IsNull(await replace);
++        Assert.AreEqual("new executable", File.ReadAllText(Target));
++    }
++
++    [TestMethod]
++    public void PersistentLockFailsWithoutDeletingOldExecutable()
++    {
++        using (var locked = new FileStream(Target, FileMode.Open, FileAccess.Read, FileShare.None))
++            Assert.IsNotNull(UpdateHelper.Replace(Source, Target, retryTimeout: TimeSpan.FromMilliseconds(200)));
++        Assert.AreEqual("old executable", File.ReadAllText(Target));
++        Assert.AreEqual(2, Directory.GetFiles(_directory).Length);
++    }
++}
+diff --git a/PCL.Core/App/Config.cs b/PCL.Core/App/Config.cs
+index 01f4a52b..66e4cf3f 100644
+--- a/PCL.Core/App/Config.cs
++++ b/PCL.Core/App/Config.cs
+@@ -117,6 +117,10 @@ public static partial class Config
+     /// </summary>
+     [ConfigGroup("Update")] partial class UpdateConfigGroup
+     {
++        [ConfigItem<UpdateNetworkMode>("FixUpdateNetworkMode", UpdateNetworkMode.Auto, ConfigSource.Local)] public partial UpdateNetworkMode NetworkMode { get; set; }
++
++        [ConfigItem<bool>("FixHideCommunityNotice", false, ConfigSource.Local)] public partial bool HideCommunityNotice { get; set; }
++
+         /// <summary>
+         /// 自动更新行为。
+         /// </summary>
+diff --git a/PCL.Core/App/Essentials/UpdateHelper.cs b/PCL.Core/App/Essentials/UpdateHelper.cs
+index 3969cf90..96f347c3 100644
+--- a/PCL.Core/App/Essentials/UpdateHelper.cs
++++ b/PCL.Core/App/Essentials/UpdateHelper.cs
+@@ -1,48 +1,77 @@
+ using System;
+-using System.Globalization;
++using System.Diagnostics;
+ using System.IO;
++using System.Security.Cryptography;
+ using System.Threading;
+ 
+ namespace PCL.Core.App.Essentials;
+ 
+ public static class UpdateHelper
+ {
+-    /// <summary>
+-    /// 更新启动器（替换文件）
+-    /// </summary>
+-    /// <param name="source">用于替换的来源文件路径</param>
+-    /// <param name="target">目标文件路径</param>
+-    public static Exception? Replace(string source, string target)
++    public static string ComputeSha256(string file)
+     {
+-        var backup = $"{target}.bak.{DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}";
+-        Exception? lastEx = null;
++        using var stream = File.OpenRead(file);
++        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
++    }
++
++    /// <summary>Stage beside the target and atomically replace it, retrying temporary file locks.</summary>
++    public static Exception? Replace(string source, string target, string? expectedSha256 = null,
++        TimeSpan? retryTimeout = null)
++    {
++        string? staged = null;
++        string? backup = null;
+         try
+         {
+             source = Path.GetFullPath(source);
+             target = Path.GetFullPath(target);
+-            // 备份目标文件
+-            File.Copy(target, backup);
+-            if (!File.Exists(backup)) throw new FileNotFoundException("备份目标文件失败", backup);
+-            // 删除原文件并等待文件删除事件
+-            var watcher = new FileSystemWatcher(Basics.GetParentPathOrEmpty(target), Path.GetFileName(target));
+-            var deletedEvent = new ManualResetEventSlim(false);
+-            watcher.Deleted += (_, _) => deletedEvent.Set();
+-            watcher.EnableRaisingEvents = true;
+-            File.Delete(target);
+-            if (!deletedEvent.Wait(TimeSpan.FromSeconds(3))) throw new TimeoutException("删除目标文件失败");
+-            watcher.EnableRaisingEvents = false;
+-            watcher.Dispose();
+-            // 复制到目标文件
+-            File.Copy(source, target);
+-            if (!File.Exists(target)) throw new FileNotFoundException("复制到目标文件失败", target);
++            if (string.Equals(source, target, OperatingSystem.IsWindows()
++                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
++                throw new ArgumentException("更新来源和目标不能是同一个文件。");
++            var expected = expectedSha256 ?? ComputeSha256(source);
++            if (!string.Equals(ComputeSha256(source), expected, StringComparison.OrdinalIgnoreCase))
++                throw new InvalidDataException("更新来源文件的 SHA-256 校验失败。");
++            var id = Guid.NewGuid().ToString("N");
++            staged = target + ".update." + id + ".tmp";
++            backup = target + ".update." + id + ".bak";
++            File.Copy(source, staged);
++            if (!string.Equals(ComputeSha256(staged), expected, StringComparison.OrdinalIgnoreCase))
++                throw new InvalidDataException("更新暂存文件的 SHA-256 校验失败。");
++
++            var timer = Stopwatch.StartNew();
++            var timeout = retryTimeout ?? TimeSpan.FromSeconds(15);
++            while (true)
++            {
++                try
++                {
++                    if (File.Exists(target)) File.Replace(staged, target, backup, ignoreMetadataErrors: true);
++                    else File.Move(staged, target);
++                    break;
++                }
++                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
++                {
++                    if (timer.Elapsed >= timeout) throw;
++                    Thread.Sleep(150);
++                }
++            }
++            if (!string.Equals(ComputeSha256(target), expected, StringComparison.OrdinalIgnoreCase))
++            {
++                if (File.Exists(backup)) File.Copy(backup, target, overwrite: true);
++                throw new InvalidDataException("安装后的 SHA-256 校验失败，已尝试恢复旧版本。");
++            }
++            TryDelete(backup);
++            return null;
+         }
+-        catch (Exception ex)
++        catch (Exception ex) { return ex; }
++        finally
+         {
+-            // 出错：恢复原文件并返回异常
+-            if (File.Exists(backup) && !File.Exists(target)) File.Move(backup, target);
+-            lastEx = ex;
++            if (staged is not null) TryDelete(staged);
++            // Keep a backup on failure rather than risk deleting the only recoverable copy.
+         }
+-        if (File.Exists(backup)) File.Delete(backup); // 删除备份文件
+-        return lastEx;
++    }
++
++    public static bool TryDelete(string path)
++    {
++        try { if (File.Exists(path)) File.Delete(path); return true; }
++        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+     }
+ }
+diff --git a/PCL.Core/App/Essentials/UpdateService.cs b/PCL.Core/App/Essentials/UpdateService.cs
+index 3705ce7b..ea122356 100644
+--- a/PCL.Core/App/Essentials/UpdateService.cs
++++ b/PCL.Core/App/Essentials/UpdateService.cs
+@@ -1,6 +1,8 @@
+ using System;
+ using System.Diagnostics;
+ using System.IO;
++using System.Threading;
++using System.Windows;
+ using PCL.Core.App.IoC;
+ using PCL.Core.Utils.Exts;
+ 
+@@ -18,15 +20,27 @@ public sealed class UpdateService : GeneralService
+     {
+         var args = Basics.CommandLineArguments;
+         
+-        if (args is not ["update", _, _, _, _])
++        if (args is not ["update", _, _, _, _] and not ["update", _, _, _, _, _])
+         {
+             switch (args)
+             {
+                 case ["update_finished", _]:
+                 {
+                     var toDelete = args[1];
+-                    File.Delete(toDelete);
+-                    Context.Debug("更新来源文件已删除");
++                    // The updater may still be exiting; cleanup must not interrupt launcher startup.
++                    for (var attempt = 0; attempt < 15 && !UpdateHelper.TryDelete(toDelete); attempt++)
++                        Thread.Sleep(100);
++                    var directory = Path.GetDirectoryName(Path.GetFullPath(toDelete))!;
++                    var updatesRoot = Path.Combine(Basics.ExecutableDirectory, "PCL", "Updates") + Path.DirectorySeparatorChar;
++                    if (directory.StartsWith(updatesRoot, StringComparison.OrdinalIgnoreCase))
++                    {
++                        var helper = Path.Combine(directory, "PCL_CE_Fix_Updater.exe");
++                        for (var attempt = 0; attempt < 15 && !UpdateHelper.TryDelete(helper); attempt++) Thread.Sleep(100);
++                        try { if (Directory.GetFileSystemEntries(directory).Length == 0) Directory.Delete(directory); }
++                        catch (IOException) { }
++                        catch (UnauthorizedAccessException) { }
++                    }
++                    Context.Debug("更新临时文件清理完成");
+                     break;
+                 }
+                 case ["update_failed", _]:
+@@ -46,21 +60,22 @@ public sealed class UpdateService : GeneralService
+         try
+         {
+             Context.Info("开始更新");
+-            Lifecycle.PendingLogDirectory = Path.Combine(Basics.ExecutableDirectory, "Log");
++            Lifecycle.PendingLogDirectory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[2]))!, "Log");
+             Lifecycle.PendingLogFileName = "LastPending_Update.log";
+ 
+             var oldProcessId = args[1].Convert<int>();
+             Context.Debug($"旧版本进程 ID: {oldProcessId}");
+             try
+             {
+-                var oldProcess = Process.GetProcessById(oldProcessId);
++                using var oldProcess = Process.GetProcessById(oldProcessId);
+                 Context.Debug("正在等待旧版本进程退出");
+-                oldProcess.WaitForExit();
++                if (!oldProcess.WaitForExit(60000))
++                    throw new TimeoutException("旧版本进程未能在 60 秒内退出，更新已停止。");
+                 Context.Trace("旧版本进程已退出");
+             }
+-            catch
++            catch (ArgumentException)
+             {
+-                /* ignored */
++                // The original process has already exited.
+             }
+ 
+             Context.Debug("正在替换文件");
+@@ -68,22 +83,26 @@ public sealed class UpdateService : GeneralService
+             Context.Trace($"目标: {target}");
+             var source = args[3];
+             Context.Trace($"来源: {source}");
+-            var ex = UpdateHelper.Replace(source, target);
+-            if (ex is null) Context.Trace("替换完成");
+-            else Context.Error("替换文件出错", ex);
++            var expected = args.Length == 6 ? args[5] : UpdateHelper.ComputeSha256(source);
++            var ex = UpdateHelper.Replace(source, target, expected);
++            if (ex is not null) throw new IOException("替换文件失败；请关闭占用文件的程序后重试，详情见更新日志。", ex);
++            Context.Trace("替换完成且 SHA-256 校验通过");
+ 
+             var restart = args[4].Convert<bool>();
+             if (restart)
+             {
+-                var restartArgs = (ex is null) ? $"finished \"{source}\"" : $"failed \"{ex.Message}\"";
++                var restartArgs = $"finished \"{source}\"";
+                 restartArgs = $"update_{restartArgs}";
+                 Context.Debug($"重启中，使用参数: {restartArgs}");
+-                Process.Start(target, restartArgs);
++                Process.Start(new ProcessStartInfo(target, restartArgs)
++                    { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(target)! });
+             }
+         }
+         catch (Exception ex)
+         {
+             Context.Error("更新过程出错", ex);
++            MessageBox.Show($"更新未完成：{ex.Message}\n\n已停止自动重启。请查看 Log/LastPending_Update.log，关闭占用文件的程序后重试，或手动替换为已下载的新版本。",
++                "PCL_CE_Fix 更新失败", MessageBoxButton.OK, MessageBoxImage.Error);
+         }
+         
+         Context.RequestExit();
+diff --git a/PCL.Core/App/GitHubUpdateRoutes.cs b/PCL.Core/App/GitHubUpdateRoutes.cs
+new file mode 100644
+index 00000000..a1a1e472
+--- /dev/null
++++ b/PCL.Core/App/GitHubUpdateRoutes.cs
+@@ -0,0 +1,23 @@
++using System;
++using System.Collections.Generic;
++using PCL.Core.App.Region;
++
++namespace PCL.Core.App;
++
++public enum UpdateNetworkMode { Auto, Accelerated, Direct }
++
++public static class GitHubUpdateRoutes
++{
++    public const string Accelerator = "https://gh-proxy.com/";
++
++    public static IReadOnlyList<string> Get(string url, UpdateNetworkMode mode, RegionClassification region)
++    {
++        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
++            (uri.Host != "github.com" && uri.Host != "api.github.com") || !uri.IsDefaultPort ||
++            !string.IsNullOrEmpty(uri.UserInfo))
++            throw new ArgumentException("Expected a canonical HTTPS GitHub URL", nameof(url));
++        var accelerated = mode == UpdateNetworkMode.Accelerated ||
++                          mode == UpdateNetworkMode.Auto && region == RegionClassification.Mainland;
++        return accelerated ? new[] { Accelerator + url, url } : new[] { url };
++    }
++}
+diff --git a/PCL.Core/App/ReleaseUpdateClient.cs b/PCL.Core/App/ReleaseUpdateClient.cs
+new file mode 100644
+index 00000000..4d3809df
+--- /dev/null
++++ b/PCL.Core/App/ReleaseUpdateClient.cs
+@@ -0,0 +1,183 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Net;
++using System.Net.Http;
++using System.Text.Json;
++using System.Text.Json.Nodes;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace PCL.Core.App;
++
++public enum UpdateCheckFailure
++{
++    None, RateLimited, Forbidden, NotFound, Network, Dns, Timeout, Server, InvalidRelease, Unexpected
++}
++
++public sealed record RepositoryUpdateResult(string Repository, ReleaseUpdateCandidate? Release, string? Error,
++    UpdateCheckFailure Failure = UpdateCheckFailure.None, DateTimeOffset? RetryAt = null);
++
++/// <summary>Independent repository caches and bounded retries for transient failures.</summary>
++public sealed class ReleaseUpdateClient
++{
++    private sealed record CacheEntry(RepositoryUpdateResult Result, DateTimeOffset ExpiresAt, string RouteKey);
++    private readonly HttpClient _client;
++    private readonly bool _arm64;
++    private readonly Func<string, IReadOnlyList<string>> _routes;
++    private readonly Func<DateTimeOffset> _clock;
++    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
++    private readonly Action<string, Exception>? _log;
++    private readonly SemaphoreSlim _checkLock = new(1, 1);
++    private readonly Dictionary<string, CacheEntry> _cache = new();
++    private RepositoryUpdateResult[] _results = [];
++
++    public ReleaseUpdateClient(HttpClient client, bool arm64, Func<DateTimeOffset>? clock = null,
++        Func<TimeSpan, CancellationToken, Task>? delay = null, Action<string, Exception>? log = null,
++        Func<string, IReadOnlyList<string>>? routes = null)
++    {
++        _client = client;
++        _arm64 = arm64;
++        _clock = clock ?? (() => DateTimeOffset.UtcNow);
++        _delay = delay ?? ((duration, token) => Task.Delay(duration, token));
++        _log = log;
++        _routes = routes ?? (url => new[] { url });
++    }
++
++    public RepositoryUpdateResult[] Results => Volatile.Read(ref _results);
++
++    public async Task<RepositoryUpdateResult[]> CheckAsync(bool force = false, CancellationToken token = default)
++    {
++        await _checkLock.WaitAsync(token).ConfigureAwait(false);
++        try
++        {
++            var entries = await Task.WhenAll(CheckOneAsync(ReleaseUpdatePolicy.ForkRepository, force, token),
++                CheckOneAsync(ReleaseUpdatePolicy.UpstreamRepository, force, token)).ConfigureAwait(false);
++            foreach (var entry in entries) _cache[entry.Result.Repository] = entry;
++            var results = entries.Select(entry => entry.Result).ToArray();
++            Volatile.Write(ref _results, results);
++            return results;
++        }
++        finally { _checkLock.Release(); }
++    }
++
++    private async Task<CacheEntry> CheckOneAsync(string repository, bool force, CancellationToken token)
++    {
++        var routeKey = string.Join("|", _routes($"https://api.github.com/repos/{repository}/releases/latest"));
++        if (_cache.TryGetValue(repository, out var cached) && cached.RouteKey == routeKey && _clock() < cached.ExpiresAt &&
++            (!force || cached.Result.Failure == UpdateCheckFailure.RateLimited)) return cached;
++        var result = await FetchAsync(repository, token).ConfigureAwait(false);
++        var expires = result.Release is not null ? _clock().AddMinutes(5)
++            : result.RetryAt ?? _clock().AddSeconds(15);
++        return new(result, expires, routeKey);
++    }
++
++    private async Task<RepositoryUpdateResult> FetchAsync(string repository, CancellationToken token)
++    {
++        var routes = _routes($"https://api.github.com/repos/{repository}/releases/latest");
++        RepositoryUpdateResult? result = null;
++        foreach (var route in routes)
++        {
++            result = await FetchRouteAsync(repository, route, token).ConfigureAwait(false);
++            if (result.Release is not null) return result;
++        }
++        return result ?? throw new InvalidOperationException("No update routes configured");
++    }
++
++    private async Task<RepositoryUpdateResult> FetchRouteAsync(string repository, string url, CancellationToken token)
++    {
++        // Spend retries on the final direct route; fail over quickly from an unavailable proxy.
++        var attempts = url.StartsWith("https://api.github.com/", StringComparison.Ordinal) ? 3 : 1;
++        for (var attempt = 1; attempt <= attempts; attempt++)
++        {
++            try
++            {
++                using var request = new HttpRequestMessage(HttpMethod.Get,
++                    url);
++                request.Headers.UserAgent.ParseAdd("PCL-CE-Fix-Updater/1.0");
++                request.Headers.Accept.ParseAdd("application/vnd.github+json");
++                using var response = await _client.SendAsync(request, token).ConfigureAwait(false);
++                var limited = response.StatusCode == HttpStatusCode.TooManyRequests ||
++                    response.StatusCode == HttpStatusCode.Forbidden &&
++                    (response.Headers.RetryAfter is not null ||
++                     response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.Contains("0"));
++                if (limited)
++                {
++                    var retryAt = GetRetryAt(response);
++                    return Failure(repository, UpdateCheckFailure.RateLimited,
++                        $"GitHub API 限流（HTTP {(int)response.StatusCode}），请在 {retryAt.ToLocalTime():HH:mm:ss} 后重试或打开发布页。",
++                        new HttpRequestException("GitHub rate limit", null, response.StatusCode), retryAt);
++                }
++                if (!response.IsSuccessStatusCode)
++                {
++                    var transient = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.RequestTimeout;
++                    if (transient && attempt < attempts)
++                    {
++                        await BackoffAsync(attempt, token).ConfigureAwait(false);
++                        continue;
++                    }
++                    var kind = response.StatusCode switch
++                    {
++                        HttpStatusCode.Forbidden => UpdateCheckFailure.Forbidden,
++                        HttpStatusCode.NotFound => UpdateCheckFailure.NotFound,
++                        _ => UpdateCheckFailure.Server
++                    };
++                    return Failure(repository, kind, $"GitHub 请求失败（HTTP {(int)response.StatusCode}），请稍后重试或打开发布页。",
++                        new HttpRequestException(response.ReasonPhrase, null, response.StatusCode));
++                }
++                var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(token).ConfigureAwait(false))
++                           ?? throw new FormatException("Empty release response");
++                return new(repository, ReleaseUpdatePolicy.Parse(json, repository, _arm64), null);
++            }
++            catch (OperationCanceledException ex) when (!token.IsCancellationRequested)
++            {
++                if (attempt < attempts) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
++                return Failure(repository, UpdateCheckFailure.Timeout, "连接 GitHub 超时，已自动重试，请稍后重试。", ex);
++            }
++            catch (HttpRequestException ex)
++            {
++                if (attempt < attempts) { await BackoffAsync(attempt, token).ConfigureAwait(false); continue; }
++                var dns = ex.HttpRequestError == HttpRequestError.NameResolutionError;
++                return Failure(repository, dns ? UpdateCheckFailure.Dns : UpdateCheckFailure.Network,
++                    dns ? "GitHub 域名解析失败（DNS），请检查网络后重试。" : "无法连接 GitHub，已自动重试，请检查网络后重试。", ex);
++            }
++            catch (Exception ex) when (ex is FormatException or JsonException or InvalidOperationException)
++            {
++                return Failure(repository, UpdateCheckFailure.InvalidRelease, "发布信息格式异常或缺少可验证的安装文件，请打开发布页查看。", ex);
++            }
++            catch (Exception ex) when (ex is not OperationCanceledException)
++            {
++                return Failure(repository, UpdateCheckFailure.Unexpected, "读取更新信息失败，详细原因已记录到日志。", ex);
++            }
++        }
++        throw new InvalidOperationException("Retry loop did not produce a result");
++    }
++
++    private Task BackoffAsync(int attempt, CancellationToken token) =>
++        _delay(TimeSpan.FromMilliseconds(250 * attempt), token);
++
++    private DateTimeOffset GetRetryAt(HttpResponseMessage response)
++    {
++        var now = _clock();
++        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero) return now + delta;
++        if (response.Headers.RetryAfter?.Date is { } date && date > now) return date;
++        if (response.Headers.TryGetValues("X-RateLimit-Reset", out var resets) &&
++            long.TryParse(resets.FirstOrDefault(), out var seconds))
++        {
++            try
++            {
++                var reset = DateTimeOffset.FromUnixTimeSeconds(seconds);
++                if (reset > now) return reset;
++            }
++            catch (ArgumentOutOfRangeException) { }
++        }
++        return now.AddMinutes(1);
++    }
++
++    private RepositoryUpdateResult Failure(string repository, UpdateCheckFailure kind, string message,
++        Exception exception, DateTimeOffset? retryAt = null)
++    {
++        _log?.Invoke(repository, exception);
++        return new(repository, null, message, kind, retryAt);
++    }
++}
+diff --git a/PCL.Core/App/ReleaseUpdatePolicy.cs b/PCL.Core/App/ReleaseUpdatePolicy.cs
+new file mode 100644
+index 00000000..fb0b2164
+--- /dev/null
++++ b/PCL.Core/App/ReleaseUpdatePolicy.cs
+@@ -0,0 +1,61 @@
++using System;
++using System.Linq;
++using System.Reflection;
++using System.Text.Json.Nodes;
++using PCL.Core.Utils;
++
++namespace PCL.Core.App;
++
++public sealed record ReleaseUpdateCandidate(string Repository, string Tag, string Commit,
++    string DownloadUrl, string Sha256, string Notes, string PageUrl, DateTimeOffset? PublishedAt = null)
++{
++    public bool IsFork => Repository == ReleaseUpdatePolicy.ForkRepository;
++
++    public bool IsNewer(string currentVersion, string currentCommit, string currentTag = "", DateTimeOffset? currentBuildTime = null) => IsFork
++        ? (!(PublishedAt is { } published && currentBuildTime is { } built && published < built) && (string.IsNullOrEmpty(currentTag)
++            ? !string.Equals(Commit, currentCommit, StringComparison.OrdinalIgnoreCase)
++            : Tag != currentTag))
++        : SemVer.TryParse(Tag.TrimStart('v'), out var remote) &&
++          SemVer.TryParse(currentVersion, out var current) && remote! > current!;
++}
++
++public static class ReleaseUpdatePolicy
++{
++    public static string CurrentReleaseTag { get; } = typeof(ReleaseUpdatePolicy).Assembly
++        .GetCustomAttributes<AssemblyMetadataAttribute>()
++        .FirstOrDefault(attribute => attribute.Key == "PCLCEFix.ReleaseTag")?.Value ?? "";
++    public static DateTimeOffset? CurrentBuildTime { get; } = DateTimeOffset.TryParse(
++        typeof(ReleaseUpdatePolicy).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
++            .FirstOrDefault(attribute => attribute.Key == "PCLCEFix.BuildTime")?.Value,
++        out var buildTime) ? buildTime : null;
++    public const string ForkRepository = "re-mcmohen/PCL-CE-Fix";
++    public const string UpstreamRepository = "PCL-Community/PCL-CE";
++
++    public static ReleaseUpdateCandidate Parse(JsonNode release, string repository, bool arm64)
++    {
++        if (repository != ForkRepository && repository != UpstreamRepository)
++            throw new ArgumentException("Unknown update repository", nameof(repository));
++        if (release["draft"]?.GetValue<bool>() != false || release["prerelease"]?.GetValue<bool>() != false)
++            throw new FormatException("Expected a published stable release");
++        var tag = release["tag_name"]?.GetValue<string>() ?? throw new FormatException("Missing release tag");
++        var arch = arm64 ? "ARM64" : "x64";
++        var file = repository == ForkRepository ? $"PCL_CE_Fix_{arch}.exe" : $"PCL2_CE_Release_{arch}.exe";
++        var asset = release["assets"]?.AsArray().FirstOrDefault(a => a?["name"]?.GetValue<string>() == file)
++                    ?? throw new FormatException($"No executable for {arch}");
++        var digest = asset["digest"]?.GetValue<string>() ?? "";
++        if (!digest.StartsWith("sha256:", StringComparison.Ordinal) || digest.Length != 71 ||
++            !digest[7..].All(Uri.IsHexDigit))
++            throw new FormatException("Release executable has no valid SHA-256 digest");
++        var url = asset["browser_download_url"]?.GetValue<string>() ?? "";
++        var expected = $"https://github.com/{repository}/releases/download/{tag}/{file}";
++        if (!string.Equals(url, expected, StringComparison.Ordinal))
++            throw new FormatException("Unexpected executable download URL");
++        var commit = release["target_commitish"]?.GetValue<string>() ?? "";
++        if (repository == ForkRepository && (commit.Length != 40 || !commit.All(Uri.IsHexDigit)))
++            throw new FormatException("Fork release must identify its source commit");
++        return new(repository, tag, commit, url, digest[7..].ToLowerInvariant(),
++            release["body"]?.GetValue<string>() ?? "暂无更新说明。",
++            $"https://github.com/{repository}/releases/tag/{tag}",
++            DateTimeOffset.TryParse(release["published_at"]?.GetValue<string>(), out var published) ? published : null);
++    }
++}
+diff --git a/PCL.Core/PCL.Core.csproj b/PCL.Core/PCL.Core.csproj
+index f823a13c..33ce0e42 100644
+--- a/PCL.Core/PCL.Core.csproj
++++ b/PCL.Core/PCL.Core.csproj
+@@ -1,4 +1,8 @@
+ <Project Sdk="Microsoft.NET.Sdk">
++    <ItemGroup Condition="'$(PCLCEFixReleaseTag)' != ''">
++        <AssemblyMetadata Include="PCLCEFix.ReleaseTag" Value="$(PCLCEFixReleaseTag)" />
++        <AssemblyMetadata Include="PCLCEFix.BuildTime" Value="$([System.DateTime]::UtcNow.ToString(&quot;O&quot;))" />
++    </ItemGroup>
+     <!-- 项目属性 -->
+     <PropertyGroup>
+         <AssemblyTitle>PCL.Core</AssemblyTitle>
+diff --git a/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs b/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs
+new file mode 100644
+index 00000000..4a968f2a
+--- /dev/null
++++ b/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs	
+@@ -0,0 +1,109 @@
++using System.IO;
++using System.Net.Http;
++using PCL.Core.App;
++using PCL.Core.App.Region;
++using PCL.Core.UI;
++using PCL.Core.Utils.OS;
++using PCL.Network;
++using PCL.Network.Loaders;
++
++namespace PCL;
++
++/// <summary>Check both distributions independently; installation always requires an explicit choice.</summary>
++public static class ForkUpdateService
++{
++    private static readonly ReleaseUpdateClient Client = new(
++        new HttpClient { Timeout = TimeSpan.FromSeconds(8) },
++        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
++        System.Runtime.InteropServices.Architecture.Arm64,
++        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
++    private static readonly SemaphoreSlim InstallLock = new(1, 1);
++    private static readonly object RefreshLock = new();
++    private static Task _backgroundRefresh = Task.CompletedTask;
++    public static RepositoryUpdateResult[] Results => Client.Results;
++    private static readonly RegionClassification DeviceRegion = RegionPolicy.Evaluate(RegionPolicy.ReadWindowsSignals()).Classification;
++    public static IReadOnlyList<string> GetRoutes(string url) =>
++        GitHubUpdateRoutes.Get(url, Config.Update.NetworkMode, DeviceRegion);
++    public static bool Installing { get; private set; }
++
++    public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(ModBase.versionBaseName,
++        Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag, ReleaseUpdatePolicy.CurrentBuildTime);
++
++    public static Task<RepositoryUpdateResult[]> CheckAsync(bool force = false) => Client.CheckAsync(force);
++
++    public static void RefreshInBackground()
++    {
++        lock (RefreshLock)
++        {
++            if (!_backgroundRefresh.IsCompleted) return;
++            _backgroundRefresh = Task.Run(async () =>
++            {
++                try { await CheckAsync().ConfigureAwait(false); }
++                catch (Exception ex) { ModBase.Log(ex, "[Update] 后台检查失败"); }
++            });
++        }
++    }
++
++    public static void NotifyInBackground() => _ = Task.Run(async () =>
++    {
++        try { await CheckAndNotifyAsync().ConfigureAwait(false); }
++        catch (Exception ex) { ModBase.Log(ex, "[Update] 后台更新通知失败"); }
++    });
++
++    public static async Task CheckAndNotifyAsync()
++    {
++        var results = await CheckAsync().ConfigureAwait(false);
++        var available = results.Where(r => r.Release is not null && IsNewer(r.Release)).ToArray();
++        if (available.Length == 0) return;
++        ModBase.RunInUi(() =>
++        {
++            var names = string.Join("\n", available.Select(r =>
++                $"{(r.Release!.IsFork ? "PCL_CE_Fix（保留补丁）" : "上游 PCL CE（原版）")}：{r.Release.Tag}"));
++            if (ModMain.MyMsgBox($"检测到可用更新：\n{names}\n\n请在更新页面选择来源，不会自动切换版本。",
++                    "启动器更新", "选择更新来源", "稍后") == 1)
++                ModMain.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
++        });
++    }
++
++    public static async Task InstallAsync(ReleaseUpdateCandidate release)
++    {
++        if (!await InstallLock.WaitAsync(0)) return;
++        string? output = null;
++        try
++        {
++            if (UpdateManager.isUpdateWaitingRestart ||
++                UpdateManager.updateLoader?.State == ModBase.LoadState.Loading)
++                throw new InvalidOperationException("已有更新任务，请先完成该任务。");
++            Installing = true;
++            var source = release.IsFork ? "PCL_CE_Fix（保留区域限制补丁）" : "上游 PCL CE（原版，可能恢复区域限制）";
++            if (ModMain.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
++                    "确认更新来源", "安装并重启", "取消", isWarn: !release.IsFork) != 1) return;
++            output = Path.Combine(Basics.ExecutableDirectory, "PCL", "Updates", Guid.NewGuid().ToString("N"), "Launcher.exe");
++            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
++            // Reuse the existing taskbar download UI, then verify the exact asset selected by the player.
++            var download = new ModLoader.LoaderCombo<int>($"更新 {source}",
++                new List<ModLoader.LoaderBase>
++                {
++                    new LoaderDownload("下载启动器", new List<DownloadFile>
++                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new ModBase.FileChecker(hash: release.Sha256)) })
++                });
++            UpdateManager.updateLoader = null;
++            download.Start();
++            ModLoader.LoaderTaskbarAdd(download);
++            ModMain.frmMain.BtnExtraDownload.ShowRefresh();
++            await Task.Run(() => download.WaitForExit());
++            var hash = ModBase.GetFileSHA256(output);
++            if (!string.Equals(hash, release.Sha256, StringComparison.OrdinalIgnoreCase))
++                throw new InvalidDataException("下载文件的 SHA-256 校验失败，已停止安装。");
++            UpdateManager.UpdateRestart(true, verifiedSource: output, expectedSha256: release.Sha256);
++        }
++        catch (Exception ex)
++        {
++            try { if (output is not null && File.Exists(output)) File.Delete(output); }
++            catch (Exception cleanupError) { ModBase.Log(cleanupError, "[Update] 清理下载文件失败"); }
++            ModBase.Log(ex, "[Update] 安装失败");
++            HintService.Hint($"更新失败：{ex.Message}", HintType.Error);
++        }
++        finally { Installing = false; InstallLock.Release(); }
++    }
++}
+diff --git a/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs b/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs
+index bb48ef70..ca57e82a 100644
+--- a/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs	
++++ b/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs	
+@@ -1,4 +1,4 @@
+-﻿using System.ComponentModel;
++using System.ComponentModel;
+ using System.Diagnostics;
+ using System.IO;
+ using PCL.Core.App;
+@@ -35,167 +35,47 @@ public static class UpdateManager
+     
+     public static UpdateEnums.VersionStatus GetVersionStatus()
+     {
+-        try
+-        {
+-            if (IsCurrentVersionBeta && (int)Config.Update.UpdateChannel != 1)
+-            {
+-                var isNewerThanStable = remoteServer.IsLatest(UpdateChannel.stable,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
+-                    ModBase.versionCode);
+-                var isBetaLatest = remoteServer.IsLatest(UpdateChannel.beta,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
+-                    ModBase.versionCode);
+-                return isNewerThanStable && isBetaLatest
+-                    ? UpdateEnums.VersionStatus.Latest
+-                    : UpdateEnums.VersionStatus.NotLatest;
+-            }
+-
+-            return remoteServer.IsLatest(
+-                IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
+-                SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
+-                ModBase.versionCode)
+-                ? UpdateEnums.VersionStatus.Latest
+-                : UpdateEnums.VersionStatus.NotLatest;
+-        }
+-        catch (Exception ex)
+-        {
+-            ModBase.Log(
+-                ex,
+-                Lang.Text("Update.Check.Failed"),
+-                ModBase.LogLevel.Hint,
+-                userSummary: Lang.Text("Update.Check.Failed"));
+-            return UpdateEnums.VersionStatus.Unknown;
+-        }
++        // This method is also called by UI actions: never wait for network here.
++        ForkUpdateService.RefreshInBackground();
++        var results = ForkUpdateService.Results;
++        if (results.Length == 0) return UpdateEnums.VersionStatus.Unknown;
++        if (results.Any(r => r.Release is not null && ForkUpdateService.IsNewer(r.Release)))
++            return UpdateEnums.VersionStatus.NotLatest;
++        return results.Any(r => r.Release is null)
++            ? UpdateEnums.VersionStatus.Unknown : UpdateEnums.VersionStatus.Latest;
+     }
+-    
++
+     public static ModLoader.LoaderCombo<JsonObject> updateLoader;
+ 
+     public static void UpdateStart(UpdateEnums.UpdateType type, string receivedKey = null, bool forceValidated = false)
+     {
+-        var dlTargetPath = ModBase.exePath + @"PCL\Plain Craft Launcher Community Edition.exe";
+-        ModBase.RunInNewThread(() =>
+-        {
+-            try
+-            {
+-                var version = remoteServer.GetLatestVersion(
+-                    IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64
+-                );
+-
+-                ModBase.WriteFile($"{ModBase.pathTemp}CEUpdateLog.md", version.Changelog);
+-                ModBase.Log($"[Update] 远程最新版本: {version.VersionName}, 当前版本: {ModBase.versionBaseName}");
+-                if (!(SemVer.Parse(version.VersionName) > SemVer.Parse(ModBase.versionBaseName)))
+-                    return;
+-                if (type == UpdateEnums.UpdateType.PromptOnly)
+-                {
+-                    ModBase.RunInUi(() =>
+-                    {
+-                        if (ModMain.MyMsgBox(
+-                                Lang.Text("Update.Available", ModBase.versionBaseName, version.VersionName),
+-                                Lang.Text("Update.Title"),
+-                                Lang.Text("Update.Action"),
+-                                Lang.Text("Common.Action.Cancel")
+-                            ) == 1)
+-                            ModMain.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
+-                    });
+-                    return;
+-                    // 构造步骤加载器
+-                }
+-
+-                var loaders = new List<ModLoader.LoaderBase>();
+-                // 下载
+-                loaders.AddRange(remoteServer.GetDownloadLoader(
+-                    IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, dlTargetPath));
+-                loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Check"), _ =>
+-                {
+-                    var curHash = ModBase.GetFileSHA256(dlTargetPath);
+-                    if ((curHash ?? "") != (version.Sha256 ?? ""))
+-                        throw new Exception(Lang.Text("Update.Error.Sha256Mismatch", version.Sha256, curHash));
+-                }));
+-                if (type == UpdateEnums.UpdateType.UpdateNow)
+-                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Install"), _ => UpdateRestart(true)));
+-                else if (type == UpdateEnums.UpdateType.Silent)
+-                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Prepare"), _ => isUpdateWaitingRestart = true));
+-                else if (type == UpdateEnums.UpdateType.DownloadAndPrompt)
+-                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.ShowButton"), _ =>
+-                    {
+-                        isUpdateWaitingRestart = true;
+-                        ModBase.RunInUi(() =>
+-                        {
+-                            ModMain.frmMain.BtnExtraUpdateRestart.ToolTip =
+-                                Lang.Text("Main.Extra.UpdateRestart.ToolTipWithVersion", ModBase.versionBaseName, version.VersionName);
+-                            ModMain.frmMain.BtnExtraUpdateRestart.ShowRefresh();
+-                            ModMain.frmMain.BtnExtraUpdateRestart.Ribble();
+-                        });
+-                    })
+-                    {
+-                        show = false
+-                    });
+-                loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.RefreshSettings"), _ =>
+-                {
+-                    if (ModMain.frmSetupUpdate is not null)
+-                        ModBase.RunInUi(() =>
+-                        {
+-                            ModMain.frmSetupUpdate.BtnUpdate.Text = Lang.Text("Update.Task.RestartInstall");
+-                            ModMain.frmSetupUpdate.BtnUpdate.IsEnabled = true;
+-                        });
+-                })
+-                {
+-                    show = false
+-                });
+-                // 启动
+-                updateLoader = new ModLoader.LoaderCombo<JsonObject>(Lang.Text("Update.Title"), loaders);
+-                updateLoader.Start();
+-                if (type == UpdateEnums.UpdateType.UpdateNow)
+-                {
+-                    ModLoader.LoaderTaskbarAdd(updateLoader);
+-                    ModMain.frmMain.BtnExtraDownload.ShowRefresh();
+-                    ModMain.frmMain.BtnExtraDownload.Ribble();
+-                }
+-            }
+-            catch (Exception ex)
+-            {
+-                ModBase.Log(ex, "[Update] 获取启动器更新失败");
+-                if (type != UpdateEnums.UpdateType.Silent)
+-                    HintService.Hint(Lang.Text("Update.Error.FetchFailed"), HintType.Error);
+-            }
+-        });
++        // Always let the player select the distribution before downloading.
++        ForkUpdateService.NotifyInBackground();
+     }
+ 
+-    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true)
++    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true,
++        string? verifiedSource = null, string? expectedSha256 = null)
+     {
+-        try
++        var fileName = verifiedSource ?? Path.Combine(ModBase.exePath, "PCL", "Plain Craft Launcher Community Edition.exe");
++        if (!File.Exists(fileName)) throw new FileNotFoundException("未找到更新文件", fileName);
++        // Run a separate copy of our updater, including when switching to an upstream release.
++        // Running the current executable itself would keep the destination locked.
++        var helper = verifiedSource is null ? fileName
++            : Path.Combine(Path.GetDirectoryName(fileName)!, "PCL_CE_Fix_Updater.exe");
++        if (verifiedSource is not null) File.Copy(Basics.ExecutablePath, helper, overwrite: false);
++        var start = new ProcessStartInfo(helper)
+         {
+-            var fileName = ModBase.exePath + @"PCL\Plain Craft Launcher Community Edition.exe";
+-            if (!File.Exists(fileName))
+-            {
+-                ModBase.Log("[System] 更新失败：未找到更新文件");
+-                return;
+-            }
+-
+-            // id old new restart
+-            var text =
+-                $"update {Process.GetCurrentProcess().Id} \"{Basics.ExecutablePath}\" \"{fileName}\" {(triggerRestart ? "true" : "false")}";
+-            ModBase.Log("[System] 更新程序启动，参数：" + text);
+-            Process.Start(new ProcessStartInfo(fileName)
+-                { WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true, Arguments = text });
+-            if (triggerRestartAndByEnd)
+-            {
+-                ModMain.frmMain.EndProgram(false, true);
+-                ModBase.Log("[System] 已由于更新强制结束程序");
+-            }
+-        }
+-        catch (Win32Exception ex)
++            UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true,
++            WorkingDirectory = Path.GetDirectoryName(Basics.ExecutablePath)!
++        };
++        foreach (var argument in new[] { "update", Environment.ProcessId.ToString(), Basics.ExecutablePath,
++                     fileName, triggerRestart ? "true" : "false" }) start.ArgumentList.Add(argument);
++        if (expectedSha256 is not null) start.ArgumentList.Add(expectedSha256);
++        using var updater = Process.Start(start) ?? throw new IOException("无法启动更新程序");
++        if (triggerRestartAndByEnd)
+         {
+-            ModBase.Log(ex, "自动更新时触发 Win32 错误，疑似被拦截");
+-            ModMain.MyMsgBox(
+-                Lang.Text("Update.Error.UpdateBlockedMessage", ModBase.exePath),
+-                Lang.Text("Update.Error.UpdateBlocked"),
+-                Lang.Text("Common.Action.Confirm"),
+-                "",
+-                "",
+-                true);
++            ModMain.frmMain.EndProgram(false, true);
++            ModBase.Log("[System] 已由于更新强制结束程序");
+         }
+     }
+ 
+@@ -243,25 +123,8 @@ public static class UpdateManager
+ 
+     private static void ScheduleBasedOnConfig()
+     {
+-        switch (Config.Update.UpdateMode)
+-        {
+-            case LauncherAutoUpdateBehavior.DownloadAndInstall:
+-                ModBase.Log("[Update] 更新设置: 自动下载并安装更新");
+-                if (GetVersionStatus() != UpdateEnums.VersionStatus.Latest)
+-                    UpdateStart(UpdateEnums.UpdateType.Silent);
+-                break;
+-            case LauncherAutoUpdateBehavior.DownloadAndAnnounce:
+-                ModBase.Log("[Update] 更新设置: 自动下载并提示更新");
+-                UpdateStart(UpdateEnums.UpdateType.DownloadAndPrompt);
+-                break;
+-            case LauncherAutoUpdateBehavior.AnnounceOnly:
+-                ModBase.Log("[Update] 更新设置: 提示更新");
+-                UpdateStart(UpdateEnums.UpdateType.PromptOnly);
+-                break;
+-            default:
+-                ModBase.Log("[Update] 更新设置: 不自动检查更新");
+-                return;
+-        }
++        if (Config.Update.UpdateMode == LauncherAutoUpdateBehavior.Disable) return;
++        ForkUpdateService.NotifyInBackground();
+     }
+ 
+     /// <summary>
+@@ -270,8 +133,10 @@ public static class UpdateManager
+     /// <param name="IsUpdate">是否为更新时启动</param>
+     public static void ShowCEAnnounce()
+     {
+-        ModMain.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
+-            Lang.Text("Update.CommunityNotice.Title"),
+-            Lang.Text("Update.CommunityNotice.Confirm"));
++        if (Config.Update.HideCommunityNotice) return;
++        if (ModMain.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
++                Lang.Text("Update.CommunityNotice.Title"),
++                Lang.Text("Update.CommunityNotice.Confirm"), "不再提醒") == 2)
++            Config.Update.HideCommunityNotice = true;
+     }
+ }
+diff --git a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml
+index c75b7c88..c339fe66 100644
+--- a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml	
++++ b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml	
+@@ -1,172 +1,47 @@
+-<local:MyPageRight
+-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+-    xmlns:local="clr-namespace:PCL" xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+-    mc:Ignorable="d" x:Class="PCL.PageSetupUpdate"
+-    PanScroll="{Binding ElementName=PanBack}">
+-    <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
+-        <StackPanel x:Name="PanMain" Margin="25,25,25,10">
+-            <local:MyCard Height="Auto">
+-                <StackPanel Margin="20,15,20,15">
+-                    <Grid>
+-                        <Grid.ColumnDefinitions>
+-                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+-                            <ColumnDefinition />
+-                            <ColumnDefinition Width="8" />
+-                            <ColumnDefinition Width="75" />
+-                        </Grid.ColumnDefinitions>
+-                        <Grid.RowDefinitions>
+-                            <RowDefinition Height="28" />
+-                            <RowDefinition Height="7" />
+-                            <RowDefinition Height="28" />
+-                            <RowDefinition Height="7" />
+-                            <RowDefinition Height="28" />
+-                        </Grid.RowDefinitions>
+-                        <TextBlock Text="{DynamicResource Setup.Update.Channel.Title}" Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Left"
+-                                   Margin="0,0,25,0" />
+-                        <local:MyComboBox x:Name="ComboSystemUpdateChannel" Tag="SystemUpdateChannel" Grid.Column="1"
+-                                          Grid.ColumnSpan="3" Grid.Row="0"
+-                                          SelectionChanged="ComboSystemUpdateBranch_SelectionChanged">
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Channel.Release}"
+-                                                  ToolTip="{DynamicResource Setup.Update.Channel.Release.ToolTip}" />
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Channel.Beta}"
+-                                                  ToolTip="{DynamicResource Setup.Update.Channel.Beta.ToolTip}" />
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Channel.Dev}"
+-                                                  ToolTip="{DynamicResource Setup.Update.Channel.Dev.ToolTip}"
+-                                                  Visibility="Collapsed" />
+-                        </local:MyComboBox>
+-                        <TextBlock Text="{DynamicResource Setup.Update.Auto.Title}" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Left"
+-                                   Margin="0,0,25,0" />
+-                        <local:MyComboBox x:Name="ComboSystemUpdateMode" Tag="SystemUpdateMode" Grid.Column="1"
+-                                          Grid.ColumnSpan="3" Grid.Row="2"
+-                                          SelectionChanged="ComboSystemUpdateMode_SelectionChanged">
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Auto.DownloadAndInstall}" ToolTip="{DynamicResource Setup.Update.Auto.DownloadAndInstall.ToolTip}" />
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Auto.DownloadAndNotify}" ToolTip="{DynamicResource Setup.Update.Auto.DownloadAndNotify.ToolTip}" />
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Auto.NotifyOnly}" ToolTip="{DynamicResource Setup.Update.Auto.NotifyOnly.ToolTip}" />
+-                            <local:MyComboBoxItem Content="{DynamicResource Setup.Update.Auto.Disabled}" ToolTip="{DynamicResource Setup.Update.Auto.Disabled.ToolTip}" />
+-                        </local:MyComboBox>
+-                        <TextBlock Text="{DynamicResource Setup.Update.MirrorChyanCdk.Label}" Grid.Row="4" VerticalAlignment="Center"
+-                                   HorizontalAlignment="Left" Margin="0,0,25,0" />
+-                        <PasswordBox x:Name="TextMirrorCDK"
+-                                      ToolTip="{DynamicResource Setup.Update.MirrorChyanCdk.ToolTip}"
+-                                     Grid.Row="4" Grid.Column="1"
+-                                     PasswordChanged="TextMirrorCDK_PasswordChanged" />
+-                        <local:MyButton x:Name="BtnGetMirrorCDK" Text="{DynamicResource Setup.Update.MirrorChyanCdk.Get}" Grid.Column="3" Grid.Row="4"
+-                                        ColorType="Highlight" Click="BtnGetMirrorCDK_Click" />
+-                    </Grid>
++<local:MyPageRight xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
++    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:PCL"
++    x:Class="PCL.PageSetupUpdate" PanScroll="{Binding ElementName=PanBack}">
++    <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
++        <StackPanel Margin="25,25,25,10">
++            <local:MyCard>
++                <StackPanel Margin="20">
++                    <TextBlock x:Name="TextCurrentVersion" FontWeight="Bold" FontSize="18" TextWrapping="Wrap" />
++                    <TextBlock Margin="0,8,0,12" Text="分别检查两个仓库的最新正式发布。选择来源后才会下载安装并重启；不会自动切换回上游。" TextWrapping="Wrap" />
++                    <local:MyCheckBox x:Name="CheckStartupUpdate" Text="启动时检查本仓库和上游更新" Change="SettingsChanged" />
++                    <local:MyCheckBox x:Name="CheckHideNotice" Margin="0,8,0,12" Text="不再显示社区版启动提醒" Change="SettingsChanged" />
++                    <ComboBox x:Name="ComboNetworkMode" Margin="0,0,0,8" SelectedIndex="0" SelectionChanged="NetworkModeChanged">
++                        <ComboBoxItem Content="自动：大陆地区优先加速" />
++                        <ComboBoxItem Content="加速：优先 GH-Proxy" />
++                        <ComboBoxItem Content="直连 GitHub" />
++                    </ComboBox>
++                    <TextBlock Margin="0,0,0,12" Text="加速由第三方 gh-proxy.com 提供，用于检查更新和下载安装文件；请求失败后回退直连。安装前仍校验 SHA-256。" TextWrapping="Wrap" />
++                    <local:MyButton x:Name="BtnCheckAgain" Text="同时检查两个仓库" Height="32" HorizontalAlignment="Left" Padding="15,0" Click="CheckAgain_Click" />
+                 </StackPanel>
+             </local:MyCard>
+-            <local:MyCard x:Name="CardUpdate" Margin="0,15">
+-                <StackPanel Margin="20,20,20,20">
+-                    <Grid>
+-                        <Grid.ColumnDefinitions>
+-                            <ColumnDefinition Width="50" />
+-                            <ColumnDefinition Width="10" />
+-                            <ColumnDefinition Width="1*" />
+-                            <ColumnDefinition Width="85" />
+-                        </Grid.ColumnDefinitions>
+-                        <Grid.RowDefinitions>
+-                            <RowDefinition Height="29" />
+-                            <RowDefinition Height="1" />
+-                            <RowDefinition Height="20" />
+-                            <RowDefinition Height="8" />
+-                            <RowDefinition Height="Auto" />
+-                            <RowDefinition Height="10" />
+-                            <RowDefinition Height="Auto" />
+-                        </Grid.RowDefinitions>
+-                        <!-- <Image Source="/Images/Icons/Tahoe.png" Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left" VerticalAlignment="Center" /> -->
+-                        <local:MyImage x:Name="ImgUpdateIcon" Source="https://www.pclc.cc/img/pcl-ce/icon.webp"
+-                                       Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50"
+-                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
+-                        <TextBlock x:Name="TextUpdateName" Text="PCL CE 2.14.0" FontWeight="Bold" FontSize="20"
+-                                   Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+-                        <TextBlock x:Name="TextUpdateDesc" Text="by PCL-Community" FontSize="14" Grid.Row="2"
+-                                   Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Top" />
+-                        <local:MyButton x:Name="BtnUpdate" Text="{DynamicResource Setup.Update.Install}" ColorType="Highlight" Grid.Row="0"
+-                                        Grid.RowSpan="2" Grid.Column="3" HorizontalAlignment="Center"
+-                                        VerticalAlignment="Center" Width="85" Height="30"
+-                                        Click="BtnUpdate_Click" />
+-                        <TextBlock x:Name="TextChangelog"
+-                                    Text="{DynamicResource Setup.Update.Changelog.Placeholder}"
+-                                   Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="4" TextWrapping="Wrap" />
+-                        <local:MyTextButton x:Name="BtnChangelogDetail" Text="{DynamicResource Setup.Update.Changelog.MoreInfo}" FontWeight="Thin"
+-                                            Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4" HorizontalAlignment="Left"
+-                                            VerticalAlignment="Center" Click="BtnChangelogDetail_Click" />
+-                    </Grid>
++            <local:MyCard Margin="0,15,0,0">
++                <StackPanel Margin="20">
++                    <TextBlock Text="PCL_CE_Fix · 本仓库" FontWeight="Bold" FontSize="18" />
++                    <TextBlock Margin="0,6,0,8" Text="re-mcmohen/PCL-CE-Fix · 保留解除区域安装限制的补丁" TextWrapping="Wrap" />
++                    <TextBlock x:Name="TextForkStatus" Text="等待检查" TextWrapping="Wrap" />
++                    <TextBlock x:Name="TextForkNotes" Margin="0,8,0,12" TextWrapping="Wrap" MaxHeight="180" TextTrimming="CharacterEllipsis" />
++                    <StackPanel Orientation="Horizontal">
++                        <local:MyButton x:Name="BtnForkUpdate" Text="更新 PCL_CE_Fix" Height="32" Padding="12,0" IsEnabled="False" Click="ForkUpdate_Click" />
++                        <local:MyButton Text="本仓库发布页（直连）" Margin="12,0,0,0" Height="32" Padding="12,0" Click="ForkRelease_Click" />
++                    </StackPanel>
+                 </StackPanel>
+             </local:MyCard>
+-            <local:MyCard x:Name="CardCheck" Margin="0,15" Visibility="Collapsed">
+-                <StackPanel Margin="20,20,20,20">
+-                    <Grid>
+-                        <Grid.ColumnDefinitions>
+-                            <ColumnDefinition Width="50" />
+-                            <ColumnDefinition Width="10" />
+-                            <ColumnDefinition Width="1*" />
+-                            <ColumnDefinition Width="80" />
+-                            <ColumnDefinition Width="10" />
+-                            <ColumnDefinition Width="100" />
+-                        </Grid.ColumnDefinitions>
+-                        <Grid.RowDefinitions>
+-                            <RowDefinition Height="29" />
+-                            <RowDefinition Height="1" />
+-                            <RowDefinition Height="20" />
+-                        </Grid.RowDefinitions>
+-                        <Image Source="pack://application:,,,/Images/icon.png" Grid.Column="0" Grid.Row="0"
+-                               Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left"
+-                               VerticalAlignment="Center" />
+-                        <!-- <local:MyImage x:Name="ImgUpdateIcon" FallbackSource="pack://application:,,,/images/icon.ico" Source="https://www.pclc.cc/img/pcl-ce/icon.webp" Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left" VerticalAlignment="Center"/> -->
+-                        <TextBlock x:Name="TextCurrentVersion" Text="PCL CE 2.13.4" FontWeight="Bold" FontSize="20"
+-                                   Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+-                        <TextBlock x:Name="TextCurrentDesc" Text="{DynamicResource Setup.Update.Latest}" FontSize="14" Grid.Row="2" Grid.Column="2"
+-                                   HorizontalAlignment="Left" VerticalAlignment="Top" />
+-                        <local:MyButton x:Name="BtnCheckAgain" Text="{DynamicResource Setup.Update.CheckAgain}" ColorType="Highlight" Grid.Row="0"
+-                                        Grid.RowSpan="2" Grid.Column="3" HorizontalAlignment="Stretch"
+-                                        VerticalAlignment="Stretch" Click="BtnCheckAgain_OnClick" />
+-                        <local:MyButton x:Name="BtnChangelog" Text="{DynamicResource Setup.Update.Changelog.View}" ColorType="Normal" Grid.Row="0"
+-                                        Grid.RowSpan="2" Grid.Column="5" HorizontalAlignment="Stretch"
+-                                        VerticalAlignment="Stretch" Click="BtnChangelog_Click" />
+-                    </Grid>
+-                </StackPanel>
+-            </local:MyCard>
+-            <local:MyCard x:Name="CardOtherOption" Title="{DynamicResource Setup.Update.OtherOptions.Title}" CanSwap="True" IsSwapped="True"
+-                          Visibility="Collapsed">
+-                <StackPanel Margin="20,40,20,20">
+-                    <Grid>
+-                        <Grid.ColumnDefinitions>
+-                            <ColumnDefinition Width="50" />
+-                            <ColumnDefinition Width="10" />
+-                            <ColumnDefinition Width="1*" />
+-                            <ColumnDefinition Width="85" />
+-                        </Grid.ColumnDefinitions>
+-                        <Grid.RowDefinitions>
+-                            <RowDefinition Height="29" />
+-                            <RowDefinition Height="1" />
+-                            <RowDefinition Height="20" />
+-                            <RowDefinition Height="8" />
+-                            <RowDefinition Height="Auto" />
+-                            <RowDefinition Height="10" />
+-                            <RowDefinition Height="Auto" />
+-                        </Grid.RowDefinitions>
+-                        <Image Source="/Images/Icons/Tahoe.png" Grid.Column="0" Grid.Row="0" Grid.RowSpan="3"
+-                               Height="50" Width="50" HorizontalAlignment="Left" VerticalAlignment="Center" />
+-                        <!--<local:MyImage x:Name="ImgUpdateIcon" FallbackSource="pack://application:,,,/images/icon.ico" Source="https://www.pclc.cc/img/pcl-ce/icon.webp" Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left" VerticalAlignment="Center"/>-->
+-                        <TextBlock x:Name="TextOptionalUpdateName" Text="AquaCL 3.0.0" FontWeight="Bold" FontSize="20"
+-                                   Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+-                        <TextBlock x:Name="TextOptionalUpdateDesc" Text="20.0 MiB" FontSize="14" Grid.Row="2"
+-                                   Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Top" />
+-                        <local:MyButton x:Name="BtnOptionalUpdate" Text="{DynamicResource Setup.Update.Install}" ColorType="Highlight" Grid.Row="0"
+-                                        Grid.RowSpan="2" Grid.Column="3" HorizontalAlignment="Stretch"
+-                                        VerticalAlignment="Stretch" />
+-                        <TextBlock x:Name="TextOptionalChangelog"
+-                                    Text="{DynamicResource Setup.Update.OtherOptions.Placeholder}"
+-                                   Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="4" TextWrapping="Wrap" />
+-                        <local:MyTextButton x:Name="BtnOptionalChangelogDetail" Text="{DynamicResource Setup.Update.Changelog.MoreInfo}" FontWeight="Thin"
+-                                            Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4" HorizontalAlignment="Left"
+-                                            VerticalAlignment="Center" />
+-                    </Grid>
++            <local:MyCard Margin="0,15,0,15">
++                <StackPanel Margin="20">
++                    <TextBlock Text="PCL CE · 上游原版" FontWeight="Bold" FontSize="18" />
++                    <TextBlock Margin="0,6,0,8" Text="PCL-Community/PCL-CE · 切回原版后，区域安装限制及上游更新逻辑可能恢复" TextWrapping="Wrap" />
++                    <TextBlock x:Name="TextUpstreamStatus" Text="等待检查" TextWrapping="Wrap" />
++                    <TextBlock x:Name="TextUpstreamNotes" Margin="0,8,0,12" TextWrapping="Wrap" MaxHeight="180" TextTrimming="CharacterEllipsis" />
++                    <StackPanel Orientation="Horizontal">
++                        <local:MyButton x:Name="BtnUpdate" Text="切换到上游 PCL CE" Height="32" Padding="12,0" IsEnabled="False" Click="UpstreamUpdate_Click" />
++                        <local:MyButton Text="上游发布页（直连）" Margin="12,0,0,0" Height="32" Padding="12,0" Click="UpstreamRelease_Click" />
++                    </StackPanel>
+                 </StackPanel>
+             </local:MyCard>
+         </StackPanel>
+     </local:MyScrollViewer>
+-</local:MyPageRight>
+\ No newline at end of file
++</local:MyPageRight>
+diff --git a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs
+index 3415d7a6..96c19292 100644
+--- a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
++++ b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
+@@ -1,284 +1,97 @@
+-﻿using System.Windows;
+-using System.Windows.Controls;
+ using System.Windows.Input;
++using System.Windows.Controls;
+ using PCL.Core.App;
+-using PCL.Core.Utils;
+-using PCL.Core.App.Localization;
+ using PCL.Core.Utils.OS;
+ 
+ namespace PCL;
+ 
+ public partial class PageSetupUpdate
+ {
+-    public VersionDataModel updateInfo;
++    private bool _initializing;
++    private bool _checking;
++    private ReleaseUpdateCandidate? _fork;
++    private ReleaseUpdateCandidate? _upstream;
+ 
+     public PageSetupUpdate()
+     {
+         InitializeComponent();
+-        Loaded += (_, _) => Init();
+-    }
+-
+-    private void Init()
+-    {
+-        ModAnimation.AniControlEnabled += 1;
+-        TextMirrorCDK.Password = Config.Update.MirrorChyanKey;
+-
+-        ComboSystemUpdateChannel.SelectedIndex = (int)Config.Update.UpdateChannel;
+-        ComboSystemUpdateMode.SelectedIndex = (int)Config.Update.UpdateMode;
+-
+-        TextCurrentVersion.Text = "PCL CE " + VersionNameFormat(ModBase.versionBaseName);
+-        ModAnimation.AniControlEnabled -= 1;
+-        CheckUpdate();
+-    }
+-
+-    private async Task<UpdateStatus> IsLatestAsync()
+-    {
+-        try
++        Loaded += (_, _) =>
+         {
+-            // 修复：使用 dynamic 绕过命名空间重名导致的编译期类型冲突，
+-            // 或者你可以尝试替换为 PCL.Core.App.SemVer.Parse(ModBase.versionBaseName)
+-            if (await UpdateManager.remoteServer.IsLatestAsync(
+-                    UpdateManager.IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
+-                    SemVer.Parse(ModBase.versionBaseName),
+-                    ModBase.versionCode))
+-            {
+-                ModBase.Log("[Update] 已是最新版本");
+-                return UpdateStatus.Latest;
+-            }
+-
+-            ModBase.Log("[Update] 有可用的新版本");
+-            return UpdateStatus.Available;
+-        }
+-        catch (Exception ex)
+-        {
+-            ModBase.Log(
+-                ex,
+-                Lang.Text("Setup.Update.Error.NetworkFailed"),
+-                ModBase.LogLevel.Hint,
+-                userSummary: Lang.Text("Setup.Update.Error.NetworkFailed"));
+-            return UpdateStatus.Error;
+-        }
++            _initializing = true;
++            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {ModBase.versionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
++            CheckStartupUpdate.Checked = Config.Update.UpdateMode != LauncherAutoUpdateBehavior.Disable;
++            CheckHideNotice.Checked = Config.Update.HideCommunityNotice;
++            ComboNetworkMode.SelectedIndex = (int)Config.Update.NetworkMode;
++            _initializing = false;
++            CheckUpdate();
++        };
+     }
+ 
+-    public async void CheckUpdate()
++    private void SettingsChanged(object sender, bool user)
+     {
+-        ModBase.Log("[Update] 开始检查更新");
+-        CardUpdate.Visibility = Visibility.Collapsed;
+-        CardCheck.Visibility = Visibility.Visible;
+-        TextCurrentDesc.Text = Lang.Text("Setup.Update.Checking");
+-        BtnCheckAgain.IsEnabled = false;
+-        switch (await IsLatestAsync())
+-        {
+-            case UpdateStatus.Available:
+-            {
+-                Exception checkUpdateEx = null;
+-                try
+-                {
+-                    updateInfo = UpdateManager.remoteServer.GetLatestVersion(
+-                        UpdateManager.IsCurrentVersionBeta
+-                            ? UpdateChannel.beta
+-                            : UpdateChannel.stable, SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64);
+-                    TextUpdateName.Text = "PCL CE " + VersionNameFormat(updateInfo.VersionName);
+-                    var summary = updateInfo.Changelog.Between("<summary>", "</summary>");
+-                    if (!updateInfo.Changelog.Contains("<summary>") || string.IsNullOrWhiteSpace(summary.Trim()))
+-                        TextChangelog.Text = Lang.Text("Setup.Update.Changelog.Empty");
+-                    else
+-                        TextChangelog.Text = summary;
+-                }
+-                catch (Exception ex)
+-                {
+-                    checkUpdateEx = ex;
+-                }
+-
+-                BtnCheckAgain.IsEnabled = true;
+-                if (updateInfo is null)
+-                {
+-                    TextCurrentDesc.Text = Lang.Text("Setup.Update.CheckFailed");
+-                    if (checkUpdateEx is not null)
+-                        ModBase.Log(
+-                            checkUpdateEx,
+-                            "[Update] 检查更新失败",
+-                            ModBase.LogLevel.Msgbox,
+-                            userSummary: Lang.Text("Update.Check.Failed"));
+-                    else
+-                        ModBase.Log(
+-                            "[Update] 检查更新失败",
+-                            ModBase.LogLevel.Msgbox,
+-                            userSummary: Lang.Text("Update.Check.Failed"));
+-                    return;
+-                }
+-
+-                if (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == ModBase.LoadState.Loading)
+-                {
+-                    BtnUpdate_Timer();
+-                    BtnUpdate.IsEnabled = false;
+-                }
+-                else if (UpdateManager.isUpdateWaitingRestart)
+-                {
+-                    BtnUpdate.Text = Lang.Text("Setup.Update.RestartInstall");
+-                    BtnUpdate.IsEnabled = true;
+-                }
+-                else
+-                {
+-                    BtnUpdate.Text = Lang.Text("Setup.Update.Install");
+-                    BtnUpdate.IsEnabled = true;
+-                }
+-
+-                CardUpdate.Visibility = Visibility.Visible;
+-                CardCheck.Visibility = Visibility.Collapsed;
+-                break;
+-            }
+-            case UpdateStatus.Latest:
+-            {
+-                CardUpdate.Visibility = Visibility.Collapsed;
+-                CardCheck.Visibility = Visibility.Visible;
+-                BtnCheckAgain.IsEnabled = true;
+-                TextCurrentDesc.Text = Lang.Text("Setup.Update.Latest");
+-                break;
+-            }
+-            case UpdateStatus.Error:
+-            {
+-                CardUpdate.Visibility = Visibility.Collapsed;
+-                CardCheck.Visibility = Visibility.Visible;
+-                BtnCheckAgain.IsEnabled = true;
+-                TextCurrentDesc.Text = Lang.Text("Setup.Update.CheckFailed");
+-                break;
+-            }
+-        }
++        if (_initializing || !IsLoaded) return;
++        Config.Update.HideCommunityNotice = CheckHideNotice.Checked == true;
++        Config.Update.UpdateMode = CheckStartupUpdate.Checked == true
++            ? LauncherAutoUpdateBehavior.AnnounceOnly : LauncherAutoUpdateBehavior.Disable;
+     }
+ 
+-    public void BtnUpdate_Timer()
++    private void NetworkModeChanged(object sender, SelectionChangedEventArgs e)
+     {
+-        while (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == ModBase.LoadState.Loading)
+-        {
+-            ModBase.RunInUi(() => BtnUpdate.Text = Lang.Number(UpdateManager.updateLoader.Progress, "P2"));
+-            Thread.Sleep(200);
+-        }
+-    }
+-
+-    private void BtnUpdate_Click(object sender, MouseButtonEventArgs e)
+-    {
+-        if (UpdateManager.isUpdateWaitingRestart) UpdateManager.UpdateRestart(true);
+-        // 开始更新流程
+-        UpdateManager.UpdateStart(UpdateEnums.UpdateType.UpdateNow);
+-    }
+-
+-    private void BtnChangelogDetail_Click(object sender, EventArgs e)
+-    {
+-        if (updateInfo is null)
+-            ModMain.MyMsgBox(Lang.Text("Setup.Update.Changelog.Unavailable"), Lang.Text("Setup.Update.Changelog.Title"));
+-        else
+-            ModMain.MyMsgBoxMarkdown(updateInfo.Changelog, Lang.Text("Setup.Update.Changelog.Title"));
+-    }
+-
+-    private void ComboSystemUpdateMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-    {
+-        if (ModAnimation.AniControlEnabled == 0)
+-            Config.Update.UpdateMode = (LauncherAutoUpdateBehavior)ComboSystemUpdateMode.SelectedIndex;
++        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
++        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
++        CheckUpdate();
+     }
+ 
+-    private void ComboSystemUpdateBranch_SelectionChanged(object sender, SelectionChangedEventArgs e)
++    public async void CheckUpdate()
+     {
+-        if (ModAnimation.AniControlEnabled != 0)
+-            return;
+-
+-        var isCancelled = false;
+-        switch (ComboSystemUpdateChannel.SelectedIndex)
++        if (_checking) return;
++        _checking = true;
++        ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
++        _fork = _upstream = null;
++        TextForkStatus.Text = TextUpstreamStatus.Text = "正在检查…";
++        TextForkNotes.Text = TextUpstreamNotes.Text = "";
++        try
+         {
+-            case 0:
+-            {
+-                break;
+-            }
+-            case 1:
+-            {
+-                if (ModMain.MyMsgBox(Lang.Text("Setup.Update.Channel.Beta.Warning.Message"),
+-                        Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
+-                        Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
+-                        Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
+-                    isCancelled = true;
+-                else
+-                    CheckUpdate();
+-                break;
+-            }
+-            case 2:
++            var results = await ForkUpdateService.CheckAsync(force: true);
++            foreach (var result in results)
+             {
+-                if (ModMain.MyMsgBox(Lang.Text("Setup.Update.Channel.Dev.Warning.Message"),
+-                        Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
+-                        Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
+-                        Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
+-                {
+-                    isCancelled = true;
+-                    break;
+-                }
+-
+-                var confirmText = Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.ExpectedInput");
+-                var ret = ModMain.MyMsgBoxInput(
+-                    Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Title"),
+-                    Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Message", confirmText),
+-                    button1: Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Submit"),
+-                    button2: Lang.Text("Common.Action.Cancel"), isWarn: true);
+-    
+-                if (ret == confirmText)
+-                {
+-                    CheckUpdate();
+-                }
+-                else
++                var fork = result.Repository == ReleaseUpdatePolicy.ForkRepository;
++                var status = fork ? TextForkStatus : TextUpstreamStatus;
++                var notes = fork ? TextForkNotes : TextUpstreamNotes;
++                var button = fork ? BtnForkUpdate : BtnUpdate;
++                if (result.Release is not { } release)
+                 {
+-                    HintService.Hint(Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.WrongInput"));
+-                    isCancelled = true;
++                    status.Text = result.Error;
++                    continue;
+                 }
+-                break;
++                var newer = ForkUpdateService.IsNewer(release);
++                status.Text = $"{release.Tag} · {(newer ? "有可用更新" : fork ? "无需更新（相同或较早的发布）" : "可选择切回此上游版本")}";
++                notes.Text = release.Notes.Length > 1200 ? release.Notes[..1200] + "…" : release.Notes;
++                button.IsEnabled = !ForkUpdateService.Installing && (!fork || newer);
++                if (fork) _fork = release; else _upstream = release;
+             }
+         }
+-
+-        if (isCancelled)
+-        {
+-            ModAnimation.AniControlEnabled += 1;
+-            ComboSystemUpdateChannel.SelectedItem = e.RemovedItems[0];
+-            ModAnimation.AniControlEnabled -= 1;
+-        }
+-        else
++        catch (Exception ex)
+         {
+-            Config.Update.UpdateChannel = (Core.App.UpdateChannel)ComboSystemUpdateChannel.SelectedIndex;
++            ModBase.Log(ex, "[Update] 检查失败");
++            TextForkStatus.Text = TextUpstreamStatus.Text = "检查失败，请稍后重试。";
+         }
++        finally { _checking = false; ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = true; }
+     }
+ 
+-    private void TextMirrorCDK_PasswordChanged(object sender, EventArgs e)
+-    {
+-        Config.Update.MirrorChyanKey = TextMirrorCDK.Password;
+-    }
+-
+-    private void BtnGetMirrorCDK_Click(object sender, MouseButtonEventArgs e)
+-    {
+-        ModBase.OpenWebsite("https://mirrorchyan.com/");
+-    }
+-
+-    private void BtnChangelog_Click(object sender, MouseButtonEventArgs e)
+-    {
+-        ModBase.OpenWebsite("https://github.com/PCL-Community/PCL2-CE/releases/v" + ModBase.versionBaseName);
+-    }
+-
+-    public string VersionNameFormat(string str)
+-    {
+-        str = str.Replace("v", "");
+-        if (!str.Contains("-"))
+-            return str;
+-        var add = str.AfterLast("-");
+-        str = str.BeforeLast("-");
+-        return $"{str} {add.Replace(".", " ").Replace("beta", "Beta").Replace("rc", "RC")}";
+-    }
+-
+-    private void BtnCheckAgain_OnClick(object sender, MouseButtonEventArgs e)
++    private async Task InstallAsync(ReleaseUpdateCandidate? release)
+     {
++        if (release is null || ForkUpdateService.Installing) return;
++        BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
++        await ForkUpdateService.InstallAsync(release);
+         CheckUpdate();
+     }
+ 
+-    private enum UpdateStatus
+-    {
+-        Checking = 0,
+-        Available = 1,
+-        Error = 2,
+-        Latest = 3
+-    }
++    private async void ForkUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_fork);
++    private async void UpstreamUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_upstream);
++    private void CheckAgain_Click(object sender, MouseButtonEventArgs e) => CheckUpdate();
++    private void ForkRelease_Click(object sender, MouseButtonEventArgs e) =>
++        ModBase.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
++    private void UpstreamRelease_Click(object sender, MouseButtonEventArgs e) =>
++        ModBase.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
+ }
