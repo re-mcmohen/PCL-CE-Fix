@@ -1,73 +1,66 @@
-**简体中文** | [English](README-EN.md) | [繁體中文](README-ZH_TW.md)
+# PCL_CE_Fix
 
-<div align="center">
+第三方基于 PCL Community Edition 独立修改的版本，解除中国大陆地区及区域信息不可用时的 Minecraft 安装、整合包安装、修复和启动文件补全限制。
 
-<img src="Plain Craft Launcher 2/Images/icon.ico" alt="Logo" width="80" height="80">
+保留区域识别及本地化逻辑，只将 `RegionAssessment.IsRestricted` 改为 `false`。原作者署名、赞助入口、正版购买劝导及许可证保持原样。与原版 PCL 及 PCL CE 的维护者无隶属关系。
 
-# PCL Community Edition
+## 分支与发布
 
-[![Stars](https://img.shields.io/github/stars/PCL-Community/PCL-CE?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHBhdGggZD0iTTggLjI1YS43NS43NSAwIDAgMSAuNjczLjQxOGwxLjg4MiAzLjgxNSA0LjIxLjYxMmEuNzUuNzUgMCAwIDEgLjQxNiAxLjI3OWwtMy4wNDYgMi45Ny43MTkgNC4xOTJhLjc1MS43NTEgMCAwIDEtMS4wODguNzkxTDggMTIuMzQ3bC0zLjc2NiAxLjk4YS43NS43NSAwIDAgMS0xLjA4OC0uNzlsLjcyLTQuMTk0TC44MTggNi4zNzRhLjc1Ljc1IDAgMCAxIC40MTYtMS4yOGw0LjIxLS42MTFMNy4zMjcuNjY4QS43NS43NSAwIDAgMSA4IC4yNVoiIGZpbGw9IiNlYWM1NGYiLz48L3N2Zz4=&logoSize=auto&label=stars&labelColor=444444&color=eac54f)](https://github.com/PCL-Community/PCL-CE/)
-![GitHub Release](https://img.shields.io/github/v/release/PCL-Community/PCL-CE?label=release&logo=github&style=for-the-badge)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/PCL-Community/PCL-CE/build-test.yml?style=for-the-badge)
+- 默认分支 `dev`：维护本项目的 `fix/` 补丁和 `.github/workflows/fix-sync-release.yml`，请在这里修改自动化。
+- `patched-dev`：自动化从上游 `PCL-Community/PCL-CE:dev` 重新生成的完整修改版源码，不要直接向此分支提交；下一次同步会用带 lease 的强制推送替换它。
+- 每天北京时间 02:23、08:23、14:23、20:23 检查上游（GitHub 调度可能延迟）。同一上游与控制版本已有成功 Release 时跳过；失败后下次重试。
+- 两个架构均构建成功才发布；直接发布 x64 和 ARM64 的单文件 `.exe`，另附许可证及 `fix-provenance.json`。Release 带 EXE 的 SHA-256 校验文件，并绑定完整补丁源码提交。
+- 补丁上下文不匹配时停止，不会自动猜测如何处理新增的限制。上游如果增加新的独立检查，需要人工审查并更新补丁。
 
-[![Issues](https://img.shields.io/github/issues/PCL-Community/PCL-CE?style=for-the-badge&label=issues&labelColor=444444&color=1F883D&logo=github)](https://github.com/PCL-Community/PCL-CE/issues)
-[![Pull requests](https://img.shields.io/github/issues-pr/PCL-Community/PCL-CE?style=for-the-badge&label=pull%20requests&labelColor=444444&color=1F883D&logo=github)](https://github.com/PCL-Community/PCL-CE/pulls)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/PCL-Community/PCL-CE/total?style=for-the-badge)
-[![哔哩哔哩](https://img.shields.io/badge/动态-bilibili-00A4DB?style=for-the-badge&labelColor=444444&logo=bilibili)](https://space.bilibili.com/3546847192811755/dynamic) <br />
+这是跟随 **dev 开发分支** 的持续构建，不代表上游稳定版质量。
 
-<a href="https://trendshift.io/repositories/21800?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-21800" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/21800/weekly?language=C%23" alt="PCL-Community%2FPCL-CE | Trendshift" width="250" height="55"/></a>
-<a href="https://trendshift.io/repositories/21800" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/21800" alt="PCL-Community%2FPCL-CE | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+## 首次部署
 
-[社区版下载](https://github.com/PCL-Community/PCL-CE/releases/latest) |
-[上游存储库](https://github.com/Meloong-Git/PCL)
+在已登录 GitHub CLI 的终端执行（`OWNER` 替换成你的账号）：
 
-[提交问题](https://github.com/PCL-Community/PCL-CE/issues/new/choose) |
-[贡献指南](https://github.com/PCL-Community/PCL-CE/wiki/开发指南)
+```powershell
+gh repo fork PCL-Community/PCL-CE --fork-name PCL-CE-Fix --clone=false
+git remote add fork https://github.com/OWNER/PCL-CE-Fix.git
+# 将本地修改审查并提交后，推送默认控制分支：
+git push fork dev
+gh repo edit OWNER/PCL-CE-Fix --default-branch dev
+gh workflow enable fix-sync-release.yml --repo OWNER/PCL-CE-Fix
+gh workflow run fix-sync-release.yml --repo OWNER/PCL-CE-Fix --ref dev
+```
 
-</div>
+Fork 的 Actions 初始可能需要在仓库 Actions 页面启用。仓库或组织策略需允许工作流写入 contents。工作流显式请求所需权限，不需要上游的发布、MirrorChyan 或签名密钥。
 
-PCL CE 是基于 PCL 开源代码二次开发的社区版本，包括了主线暂未制作的功能和改进！
+如果 GitHub 拒绝同步包含 `.github/workflows` 变更的上游提交，请在仓库 Actions Secrets 中设置 `SYNC_TOKEN`：使用仅能访问本仓库的令牌，授予 Contents 和 Workflows 写入权限；经典 PAT 对公开仓库需要 `public_repo` 与 `workflow`。该令牌仅用于同步源码。无此需求时默认使用内置 `GITHUB_TOKEN`。
 
-社区版的版本号与主线并非严格对应关系，也请不要向官方仓库反馈社区版问题。
+补丁维护时，控制分支提交会触发一次构建。也可以在 Actions 中手动运行 **PCL_CE_Fix Sync and Release**。构建或补丁失败时，在 Actions 日志检查失败原因；修正后重跑即可。
 
-欢迎大家来用用看！
+GitHub 可能在公开仓库长期无活动后关闭定时工作流；如停止运行，请在 Actions 中重新启用。
 
-**开发群:** [599620549](https://qm.qq.com/q/PNQA4Md8wc)[✦](https://t.me/+78XW2bUOvKJjMTZl) | **用户 1 群:** [1028074835](https://qm.qq.com/q/qrMGJo8BQQ) | **用户 2 群:** [1070029541](https://qm.qq.com/q/lBywbDMWhG)
+## 运行环境与体积
 
-## 💻 支持平台
+与上游一致使用 `--no-self-contained` 发布单文件程序，不包含 .NET/WPF 运行时。运行前需要安装对应架构的 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。单文件不等于自包含：旧版自包含构建将整个运行时打入 EXE，因此体积超过 150 MB；当前发布方式只打包应用及其依赖。
 
-| 操作系统 | 支持情况 | 环境要求 |
-|---|---|---|
-| Windows 10 1809 (17763) 或更高 | ✅ 完整支持 | [.NET 10 Desktop Runtime](https://get.dot.net/10) |
-| Windows 8 - Windows 10 1809 (17763) | ⚠️ 理论能跑，酌情提供社区支持 | [.NET 10 Desktop Runtime](https://get.dot.net/10) |
-| Windows 7 或更低版本 | ❌ 不支持 | / |
-| macOS / Linux / 其他操作系统 | ⚠️ 仅跨平台开发支持（交叉编译） | [.NET 10 SDK](https://get.dot.net/10) |
+## API 凭据与更新
 
-**✅ 完整支持**：尽可能提供一切相关支持，但必须确保启动器为最新版本。
+Fork 不会获得上游 Secrets。可选配置你自己的 `CLIENT_ID`（Microsoft OAuth）和 `CURSEFORGE_API_KEY`。缺少这些凭据时构建仍可进行，但相应服务可能不可用；联机大厅等依赖上游私有服务凭据的功能同样不保证可用。本仓库不尝试提取上游密钥。
 
-**⚠️ 理论能跑，酌情提供社区支持**：PCL CE 应该可以在这些平台上运行，但不保证功能完全可用。你可能需要升级到完整支持的系统版本以获得进一步社区技术支持。
+**目前程序内更新仍使用上游服务器。请关闭自动更新，并从本仓库 Releases 手动下载更新，否则可能被覆盖回含区域限制的上游版本。** 游戏和 Mod 的更新不受此说明影响。
 
-**❌ 不支持**：PCL CE 在这些平台的可用性较低，甚至压根打不开。请升级操作系统以使用 PCL CE。
+## 本地应用与验证
 
-**⚠️ 仅跨平台开发支持（交叉编译）**：PCL CE 的源代码可以在 macOS 与 Linux 平台编译，但无法直接运行。作为开发者，你可以在这些平台上进行开发，然后将编译产物转移到 Windows 系统测试。
+需要 Python 3、Git、.NET 10 SDK，以及 Windows 环境来运行 WPF 测试。
 
-**注**：    
-社区仅对最新版本的启动器提供支持。    
-取决于部分问题的特殊性（如系统不完整），有时你仍然必须升级操作系统以继续获得支持。    
-PCL CE 始终建议使用最新版本的操作系统以获得最佳体验。    
-你仍然可以尝试在不受支持的系统上使用 PCL CE，但可能会遇到很多额外问题。
+```powershell
+# 对干净的上游 checkout 应用补丁；已经打过补丁会报错：
+python fix/apply.py PATH_TO_CLEAN_UPSTREAM
+dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 --filter FullyQualifiedName~RegionPolicyTest
+dotnet publish 'Plain Craft Launcher 2/Plain Craft Launcher 2.csproj' -c Release -p:Platform=x64 --no-self-contained -o artifacts/x64
+```
 
-## 🔒 许可证
+`fix/remove-region-restriction.patch` 同时更新上游区域测试的限制预期，保留原有区域分类断言。修改补丁时需同步维护控制分支中的源码及测试。
 
-- `Plain Craft Launcher 2/` 使用 [自定义许可证](https://github.com/PCL-Community/PCL-CE/blob/dev/Plain%20Craft%20Launcher%202/LICENCE)
-- `其余所有目录` 使用 [Apache License 2.0](https://github.com/PCL-Community/PCL-CE/blob/dev/LICENSE)
+## 许可与原项目
 
-## 🌟 统计数据
-![Alt](https://repobeats.axiom.co/api/embed/3e46296e6e3a134991a783480fd2f62723bb0353.svg "Repobeats analytics image")
+`PCL.Core/` 等目录使用根目录 Apache 2.0 许可证；`Plain Craft Launcher 2/` 使用其目录内的《PCL 分发有限许可》及使用指南。请阅读并保留全部原始许可文本，不能将整个项目视为 Apache 2.0。
 
-[![Star History Chart](https://api.star-history.com/chart?repos=PCL-Community/PCL-CE&type=date&legend=top-left&sealed_token=Ts-GaAXJ5nb9fJERusrXneo05pfZ83tMhReHJ98nmmlemBTqHS5Ozocdep1MTMdsX-6CRiQH9TqiS1Kk7SxjTfk02eUOxnm25oHff6TLLvrY7pGujOkU1IwjVFQLE-5GJYogutJAyI78jujBlOnpk3J2OKAY1PBhmkyUOzW1C1sdz5BzPbj2eBbJGvDx)](https://www.star-history.com/?repos=PCL-Community%2FPCL-CE&type=date&legend=top-left)
-
-**此页浏览量**（总计 / 今日）：[![Hits](https://hits.zkitefly.eu.org/?tag=https://github.com/PCL-Community/PCL-CE)](https://hits.zkitefly.eu.org/?tag=https://github.com/PCL-Community/PCL-CE&web=true)
-## ❤️ 贡献者
-
-[![](https://contrib.rocks/image?repo=PCL-Community/PCL-CE)](https://github.com/PCL-Community/PCL-CE/graphs/contributors)
+上游项目说明见控制分支原始 README，或生成分支的 `README-UPSTREAM.md`。
