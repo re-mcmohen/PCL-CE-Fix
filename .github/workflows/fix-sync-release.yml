@@ -119,6 +119,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Move-Item 'artifact/Plain Craft Launcher 2.exe' "PCL_CE_Fix_$env:ARCH.exe"
           Get-Item "PCL_CE_Fix_$env:ARCH.exe" | Select-Object Name, Length
+      - name: Smoke test executable updater protocols
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: ./fix/test-updater.ps1 -Executable ./PCL_CE_Fix_x64.exe
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PCL_CE_Fix_${{ matrix.arch }}
