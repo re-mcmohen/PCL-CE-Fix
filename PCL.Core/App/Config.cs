@@ -117,6 +117,8 @@ public static partial class Config
     /// </summary>
     [ConfigGroup("Update")] partial class UpdateConfigGroup
     {
+        [ConfigItem<bool>("FixHideCommunityNotice", false, ConfigSource.Local)] public partial bool HideCommunityNotice { get; set; }
+
         /// <summary>
         /// 自动更新行为。
         /// </summary>
