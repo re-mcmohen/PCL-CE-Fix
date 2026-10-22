@@ -9,11 +9,11 @@
                     <TextBlock Margin="0,8,0,12" Text="分别检查两个仓库的最新正式发布。选择来源后才会下载安装并重启；不会自动切换回上游。" TextWrapping="Wrap" />
                     <local:MyCheckBox x:Name="CheckStartupUpdate" Text="启动时检查本仓库和上游更新" Change="SettingsChanged" />
                     <local:MyCheckBox x:Name="CheckHideNotice" Margin="0,8,0,12" Text="不再显示社区版启动提醒" Change="SettingsChanged" />
-                    <ComboBox x:Name="ComboNetworkMode" Margin="0,0,0,8" SelectedIndex="0" SelectionChanged="NetworkModeChanged">
-                        <ComboBoxItem Content="自动：大陆地区优先加速" />
-                        <ComboBoxItem Content="加速：优先 GH-Proxy" />
-                        <ComboBoxItem Content="直连 GitHub" />
-                    </ComboBox>
+                    <local:MyComboBox x:Name="ComboNetworkMode" Margin="0,0,0,8" SelectedIndex="0" SelectionChanged="NetworkModeChanged">
+                        <local:MyComboBoxItem Content="自动：大陆地区优先加速" />
+                        <local:MyComboBoxItem Content="加速：优先 GH-Proxy" />
+                        <local:MyComboBoxItem Content="直连 GitHub" />
+                    </local:MyComboBox>
                     <TextBlock Margin="0,0,0,12" Text="加速由第三方 gh-proxy.com 提供，用于检查更新和下载安装文件；请求失败后回退直连。安装前仍校验 SHA-256。" TextWrapping="Wrap" />
                     <local:MyButton x:Name="BtnCheckAgain" Text="同时检查两个仓库" Height="32" HorizontalAlignment="Left" Padding="15,0" Click="CheckAgain_Click" />
                 </StackPanel>
