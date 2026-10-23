@@ -1030,6 +1030,27 @@ index f823a13c..33ce0e42 100644
      <!-- 项目属性 -->
      <PropertyGroup>
          <AssemblyTitle>PCL.Core</AssemblyTitle>
+diff --git a/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs b/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs
+index 8a4b584f..1ba74100 100644
+--- a/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs	
++++ b/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs	
+@@ -179,14 +179,8 @@ public static class ProfileUi
+         return uuid;
+     }
+ 
+-    public static bool CanCreateOtherProfile()
+-    {
+-#if DEBUG || DEBUGCI
+-        return true;
+-#else
+-        return ProfileService.HasMicrosoftProfile || (Lang.IsFeaturesUnrestricted && ProfileService.Profiles.Count > 0) || NetworkHelper.IsNetworkAvailable() is false;
+-#endif
+-    }
++    // PCL_CE_Fix: all profile types remain available regardless of region, network or existing accounts.
++    public static bool CanCreateOtherProfile() => true;
+ 
+     public static void CreateProfile()
+     {
 diff --git a/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs b/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs
 new file mode 100644
 index 00000000..4a968f2a

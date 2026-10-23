@@ -4,7 +4,7 @@
 
 第三方基于 PCL Community Edition 独立修改的版本，解除中国大陆地区及区域信息不可用时的 Minecraft 安装、整合包安装、修复和启动文件补全限制。
 
-区域补丁保留区域识别及本地化逻辑，只将 `RegionAssessment.IsRestricted` 改为 `false`。另提供可关闭的启动提醒与双仓库更新页面。原作者署名、赞助入口、正版购买劝导及许可证保持原样。与原版 PCL 及 PCL CE 的维护者无隶属关系。
+区域补丁保留区域识别及本地化逻辑，只将 `RegionAssessment.IsRestricted` 改为 `false`。另提供可关闭的启动提醒与双仓库更新页面；创建账号档案时始终开放微软、第三方和离线三种方式，不受地区、网络状态或已有账号影响。原作者署名、赞助入口、正版购买劝导及许可证保持原样。与原版 PCL 及 PCL CE 的维护者无隶属关系。
 
 感谢 [PCL Community Edition](https://github.com/PCL-Community/PCL-CE) 的开发者，以及 [PCL](https://github.com/Meloong-Git/PCL) 原作者龙腾猫跃提供的基础项目。
 
