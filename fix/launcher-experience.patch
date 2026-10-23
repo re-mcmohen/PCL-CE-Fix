@@ -1635,7 +1635,7 @@ index c75b7c88..389d3d97 100644
 \ No newline at end of file
 +</local:MyPageRight>
 diff --git a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs
-index 3415d7a6..96c19292 100644
+index ee0469c2..96c19292 100644
 --- a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
 +++ b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
 @@ -1,284 +1,97 @@
@@ -1666,14 +1666,14 @@ index 3415d7a6..96c19292 100644
 -
 -    private void Init()
 -    {
--        ModAnimation.AniControlEnabled += 1;
+-        ModAnimation.AniBeginControl();
 -        TextMirrorCDK.Password = Config.Update.MirrorChyanKey;
 -
 -        ComboSystemUpdateChannel.SelectedIndex = (int)Config.Update.UpdateChannel;
 -        ComboSystemUpdateMode.SelectedIndex = (int)Config.Update.UpdateMode;
 -
 -        TextCurrentVersion.Text = "PCL CE " + VersionNameFormat(ModBase.versionBaseName);
--        ModAnimation.AniControlEnabled -= 1;
+-        ModAnimation.AniEndControl();
 -        CheckUpdate();
 -    }
 -
@@ -1835,7 +1835,7 @@ index 3415d7a6..96c19292 100644
 -
 -    private void ComboSystemUpdateMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
 -    {
--        if (ModAnimation.AniControlEnabled == 0)
+-        if (!ModAnimation.AniExitsAnyControl())
 -            Config.Update.UpdateMode = (LauncherAutoUpdateBehavior)ComboSystemUpdateMode.SelectedIndex;
 +        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
 +        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
@@ -1845,7 +1845,7 @@ index 3415d7a6..96c19292 100644
 -    private void ComboSystemUpdateBranch_SelectionChanged(object sender, SelectionChangedEventArgs e)
 +    public async void CheckUpdate()
      {
--        if (ModAnimation.AniControlEnabled != 0)
+-        if (ModAnimation.AniExitsAnyControl())
 -            return;
 -
 -        var isCancelled = false;
@@ -1920,9 +1920,9 @@ index 3415d7a6..96c19292 100644
 -
 -        if (isCancelled)
 -        {
--            ModAnimation.AniControlEnabled += 1;
+-            ModAnimation.AniBeginControl();
 -            ComboSystemUpdateChannel.SelectedItem = e.RemovedItems[0];
--            ModAnimation.AniControlEnabled -= 1;
+-            ModAnimation.AniEndControl();
 -        }
 -        else
 +        catch (Exception ex)
