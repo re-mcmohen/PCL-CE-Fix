@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '23 */6 * * *'
   workflow_dispatch:
+    inputs:
+      release_revision:
+        description: 'Optional revision for rebuilding after credential/config changes (letters, digits, hyphens only)'
+        required: false
+        default: ''
+        type: string
   push:
     branches: [dev]
     paths:
@@ -44,6 +50,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_REVISION: ${{ inputs.release_revision }}
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +59,14 @@ jobs:
           upstream=$(git rev-parse FETCH_HEAD)
           control=$(git -C ../control rev-parse HEAD)
           tag="fix-${upstream:0:12}-${control:0:12}"
+          # Credentials can change without a source commit; allow an explicit new release identity.
+          if [ -n "$RELEASE_REVISION" ]; then
+            if [[ ! "$RELEASE_REVISION" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,39}$ ]]; then
+              echo 'Invalid release revision: use 1-40 letters, digits or hyphens.' >&2
+              exit 1
+            fi
+            tag="$tag-r$RELEASE_REVISION"
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           # Skip only a completed release. Failed builds are retried on the next run.
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > /tmp/release-state; then
@@ -102,15 +117,20 @@ jobs:
       - name: Test fork policies and updater
         env:
           PCL_EXPECTED_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          PCL_EXPECTED_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_WRITE_SECRET: '1'
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
         if: matrix.arch == 'x64'
-        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest|FullyQualifiedName~UpdateHelperTest|FullyQualifiedName~GitHubUpdateRoutesTest"
+        run: dotnet test PCL.Core.Test/PCL.Core.Test.csproj -c Release -p:Platform=x64 -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} -p:UseSharedCompilation=false --filter "FullyQualifiedName~RegionPolicyTest|FullyQualifiedName~ReleaseUpdatePolicyTest|FullyQualifiedName~ReleaseUpdateClientTest|FullyQualifiedName~UpdateHelperTest|FullyQualifiedName~GitHubUpdateRoutesTest"
+      - name: Clean binaries before embedding release configuration
+        run: dotnet clean "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }}
       - name: Publish
         env:
           PCL_WRITE_SECRET: '1'
           PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
           PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
           PCL_GITHUB_SHA: ${{ needs.prepare.outputs.sha }}
-        run: dotnet publish "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }} -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --no-self-contained -o artifact
+        run: dotnet publish "Plain Craft Launcher 2/Plain Craft Launcher 2.csproj" -c Release -p:Platform=${{ matrix.arch }} -p:PCLCEFixReleaseTag=${{ needs.prepare.outputs.tag }} --no-self-contained -p:UseSharedCompilation=false -o artifact
       - name: Prepare executable
         shell: pwsh
         env:

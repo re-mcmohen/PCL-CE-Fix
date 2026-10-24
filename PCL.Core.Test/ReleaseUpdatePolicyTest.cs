@@ -9,6 +9,21 @@ namespace PCL.Core.Test;
 public class ReleaseUpdatePolicyTest
 {
     [TestMethod]
+    public void MicrosoftClientIdIsEmbeddedByConfiguredBuild()
+    {
+        var expected = Environment.GetEnvironmentVariable("PCL_EXPECTED_MS_CLIENT_ID");
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            Assert.Inconclusive("No Microsoft OAuth app configured for this build.");
+            return;
+        }
+        Assert.IsTrue(Guid.TryParse(expected, out _), "Configured OAuth app ID must be a GUID");
+        Assert.IsTrue(string.Equals(expected, PCL.Core.App.Secrets.MSOAuthClientId, StringComparison.Ordinal),
+            "Compiled Microsoft OAuth app ID must match the build configuration");
+        _ = new PCL.Core.Minecraft.Profile.Authentication.MicrosoftProvider();
+    }
+
+    [TestMethod]
     public void StaleLatestResponseCannotDowngradeCurrentBuild()
     {
         var now = DateTimeOffset.UtcNow;

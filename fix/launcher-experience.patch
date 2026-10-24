@@ -281,10 +281,10 @@ index 00000000..10610e2e
 +}
 diff --git a/PCL.Core.Test/ReleaseUpdatePolicyTest.cs b/PCL.Core.Test/ReleaseUpdatePolicyTest.cs
 new file mode 100644
-index 00000000..c76fb2d7
+index 00000000..ca0ff288
 --- /dev/null
 +++ b/PCL.Core.Test/ReleaseUpdatePolicyTest.cs
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,136 @@
 +using System;
 +using System.Text.Json.Nodes;
 +using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -295,6 +295,21 @@ index 00000000..c76fb2d7
 +[TestClass]
 +public class ReleaseUpdatePolicyTest
 +{
++    [TestMethod]
++    public void MicrosoftClientIdIsEmbeddedByConfiguredBuild()
++    {
++        var expected = Environment.GetEnvironmentVariable("PCL_EXPECTED_MS_CLIENT_ID");
++        if (string.IsNullOrWhiteSpace(expected))
++        {
++            Assert.Inconclusive("No Microsoft OAuth app configured for this build.");
++            return;
++        }
++        Assert.IsTrue(Guid.TryParse(expected, out _), "Configured OAuth app ID must be a GUID");
++        Assert.IsTrue(string.Equals(expected, PCL.Core.App.Secrets.MSOAuthClientId, StringComparison.Ordinal),
++            "Compiled Microsoft OAuth app ID must match the build configuration");
++        _ = new PCL.Core.Minecraft.Profile.Authentication.MicrosoftProvider();
++    }
++
 +    [TestMethod]
 +    public void StaleLatestResponseCannotDowngradeCurrentBuild()
 +    {
