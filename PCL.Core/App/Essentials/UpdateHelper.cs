@@ -1,48 +1,77 @@
 using System;
-using System.Globalization;
+using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace PCL.Core.App.Essentials;
 
 public static class UpdateHelper
 {
-    /// <summary>
-    /// 更新启动器（替换文件）
-    /// </summary>
-    /// <param name="source">用于替换的来源文件路径</param>
-    /// <param name="target">目标文件路径</param>
-    public static Exception? Replace(string source, string target)
+    public static string ComputeSha256(string file)
     {
-        var backup = $"{target}.bak.{DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}";
-        Exception? lastEx = null;
+        using var stream = File.OpenRead(file);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>Stage beside the target and atomically replace it, retrying temporary file locks.</summary>
+    public static Exception? Replace(string source, string target, string? expectedSha256 = null,
+        TimeSpan? retryTimeout = null)
+    {
+        string? staged = null;
+        string? backup = null;
         try
         {
             source = Path.GetFullPath(source);
             target = Path.GetFullPath(target);
-            // 备份目标文件
-            File.Copy(target, backup);
-            if (!File.Exists(backup)) throw new FileNotFoundException("备份目标文件失败", backup);
-            // 删除原文件并等待文件删除事件
-            var watcher = new FileSystemWatcher(Basics.GetParentPathOrEmpty(target), Path.GetFileName(target));
-            var deletedEvent = new ManualResetEventSlim(false);
-            watcher.Deleted += (_, _) => deletedEvent.Set();
-            watcher.EnableRaisingEvents = true;
-            File.Delete(target);
-            if (!deletedEvent.Wait(TimeSpan.FromSeconds(3))) throw new TimeoutException("删除目标文件失败");
-            watcher.EnableRaisingEvents = false;
-            watcher.Dispose();
-            // 复制到目标文件
-            File.Copy(source, target);
-            if (!File.Exists(target)) throw new FileNotFoundException("复制到目标文件失败", target);
+            if (string.Equals(source, target, OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                throw new ArgumentException("更新来源和目标不能是同一个文件。");
+            var expected = expectedSha256 ?? ComputeSha256(source);
+            if (!string.Equals(ComputeSha256(source), expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("更新来源文件的 SHA-256 校验失败。");
+            var id = Guid.NewGuid().ToString("N");
+            staged = target + ".update." + id + ".tmp";
+            backup = target + ".update." + id + ".bak";
+            File.Copy(source, staged);
+            if (!string.Equals(ComputeSha256(staged), expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("更新暂存文件的 SHA-256 校验失败。");
+
+            var timer = Stopwatch.StartNew();
+            var timeout = retryTimeout ?? TimeSpan.FromSeconds(15);
+            while (true)
+            {
+                try
+                {
+                    if (File.Exists(target)) File.Replace(staged, target, backup, ignoreMetadataErrors: true);
+                    else File.Move(staged, target);
+                    break;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    if (timer.Elapsed >= timeout) throw;
+                    Thread.Sleep(150);
+                }
+            }
+            if (!string.Equals(ComputeSha256(target), expected, StringComparison.OrdinalIgnoreCase))
+            {
+                if (File.Exists(backup)) File.Copy(backup, target, overwrite: true);
+                throw new InvalidDataException("安装后的 SHA-256 校验失败，已尝试恢复旧版本。");
+            }
+            TryDelete(backup);
+            return null;
         }
-        catch (Exception ex)
+        catch (Exception ex) { return ex; }
+        finally
         {
-            // 出错：恢复原文件并返回异常
-            if (File.Exists(backup) && !File.Exists(target)) File.Move(backup, target);
-            lastEx = ex;
+            if (staged is not null) TryDelete(staged);
+            // Keep a backup on failure rather than risk deleting the only recoverable copy.
         }
-        if (File.Exists(backup)) File.Delete(backup); // 删除备份文件
-        return lastEx;
+    }
+
+    public static bool TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 }
