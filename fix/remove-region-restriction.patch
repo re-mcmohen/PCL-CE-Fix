@@ -1,0 +1,100 @@
+diff --git a/PCL.Core.Test/RegionPolicyTest.cs b/PCL.Core.Test/RegionPolicyTest.cs
+index cd708b63..a8c1141c 100644
+--- a/PCL.Core.Test/RegionPolicyTest.cs
++++ b/PCL.Core.Test/RegionPolicyTest.cs
+@@ -8,18 +8,20 @@ namespace PCL.Core.Test;
+ public class RegionPolicyTest
+ {
+     [TestMethod]
+-    public void ChinaGeoRestrictsRegardlessOfLanguage()
++    public void ChinaGeoRemainsClassifiedButAllowsInstallation()
+     {
+         var result = RegionPolicy.Evaluate(Signals(geo: "CN", languages: ["en-US"], locale: "en-US"));
+         Assert.AreEqual(RegionClassification.Mainland, result.Classification);
++        Assert.IsFalse(result.IsRestricted);
+     }
+ 
+     [TestMethod]
+-    public void ChinaTimeZoneAndExplicitChinaLocaleRestrictEvenWithOtherGeo()
++    public void ChinaTimeZoneAndLocaleRemainClassifiedButAllowInstallation()
+     {
+         var result = RegionPolicy.Evaluate(Signals(geo: "US", languages: ["zh-CN", "en-US"], locale: "en-US",
+             timeZone: "China Standard Time"));
+         Assert.AreEqual(RegionClassification.Mainland, result.Classification);
++        Assert.IsFalse(result.IsRestricted);
+     }
+ 
+     [DataTestMethod]
+@@ -35,11 +37,11 @@ public class RegionPolicyTest
+     }
+ 
+     [TestMethod]
+-    public void MissingSignalsRestrictAsUnknown()
++    public void MissingSignalsRemainUnknownButAllowInstallation()
+     {
+         var result = RegionPolicy.Evaluate(new RegionSignals(null, false, [], false, null, false, null, false));
+         Assert.AreEqual(RegionClassification.Unknown, result.Classification);
+-        Assert.IsTrue(result.IsRestricted);
++        Assert.IsFalse(result.IsRestricted);
+         Assert.AreEqual("signals-unavailable", result.Reason);
+     }
+ 
+@@ -61,22 +63,22 @@ public class RegionPolicyTest
+     }
+ 
+     [TestMethod]
+-    public void ChinaDeviceRegionRestrictsRegardlessOfOtherSignals()
++    public void ChinaDeviceRegionRemainsClassifiedButAllowsInstallation()
+     {
+         var result = RegionPolicy.Evaluate(Signals(geo: "JP", locale: "ja-JP", timeZone: "Tokyo Standard Time",
+             deviceRegion: 45, deviceRegionAvailable: true));
+         Assert.AreEqual(RegionClassification.Mainland, result.Classification);
++        Assert.IsFalse(result.IsRestricted);
+         Assert.AreEqual("device-region-cn", result.Reason);
+-        Assert.IsTrue(result.IsRestricted);
+     }
+ 
+     [TestMethod]
+-    public void ChinaDeviceRegionAloneRestricts()
++    public void ChinaDeviceRegionAloneAllowsInstallation()
+     {
+         var result = RegionPolicy.Evaluate(
+             new RegionSignals(null, false, [], false, null, false, null, false, 45, true));
+         Assert.AreEqual(RegionClassification.Mainland, result.Classification);
+-        Assert.IsTrue(result.IsRestricted);
++        Assert.IsFalse(result.IsRestricted);
+     }
+ 
+     [TestMethod]
+@@ -94,7 +96,7 @@ public class RegionPolicyTest
+         var result = RegionPolicy.Evaluate(
+             new RegionSignals(null, false, [], false, null, false, null, false, 242, true));
+         Assert.AreEqual(RegionClassification.Unknown, result.Classification);
+-        Assert.IsTrue(result.IsRestricted);
++        Assert.IsFalse(result.IsRestricted);
+     }
+ 
+     [TestMethod]
+@@ -113,7 +115,7 @@ public class RegionPolicyTest
+         var result = RegionPolicy.Evaluate(new RegionSignals(null, false, ["zh-CN"], true,
+             null, false, null, false));
+         Assert.AreEqual(RegionClassification.Unknown, result.Classification);
+-        Assert.IsTrue(result.IsRestricted);
++        Assert.IsFalse(result.IsRestricted);
+     }
+ 
+     [TestMethod]
+diff --git a/PCL.Core/App/Region/RegionPolicy.cs b/PCL.Core/App/Region/RegionPolicy.cs
+index df448316..e305046b 100644
+--- a/PCL.Core/App/Region/RegionPolicy.cs
++++ b/PCL.Core/App/Region/RegionPolicy.cs
+@@ -28,7 +28,8 @@ public sealed record RegionSignals(
+ 
+ public sealed record RegionAssessment(RegionClassification Classification, string Reason)
+ {
+-    public bool IsRestricted => Classification is RegionClassification.Mainland or RegionClassification.Unknown;
++    // PCL_CE_Fix: region signals must not disable installation or file repair.
++    public bool IsRestricted => false;
+ }
+ 
+ public static partial class RegionPolicy
