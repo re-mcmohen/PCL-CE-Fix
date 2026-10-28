@@ -1,0 +1,7 @@
+{
+  "upstream": "07f5ae4646d704aed5d34c87a898f65fe227fbaf",
+  "control": "d56dda918b85db584a80341bc41895d6f3d4902b",
+  "release_tag": "fix-07f5ae4646d7-d56dda918b85",
+  "repository": "PCL-Community/PCL-CE",
+  "branch": "dev"
+}

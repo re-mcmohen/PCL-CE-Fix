@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup Condition="'$(PCLCEFixReleaseTag)' != ''">
+        <AssemblyMetadata Include="PCLCEFix.ReleaseTag" Value="$(PCLCEFixReleaseTag)" />
+        <AssemblyMetadata Include="PCLCEFix.BuildTime" Value="$([System.DateTime]::UtcNow.ToString(&quot;O&quot;))" />
+    </ItemGroup>
     <!-- 项目属性 -->
     <PropertyGroup>
         <AssemblyTitle>PCL.Core</AssemblyTitle>
