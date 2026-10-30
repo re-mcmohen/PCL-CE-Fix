@@ -5,8 +5,11 @@ using PCL.Core.Utils.OS;
 
 namespace PCL;
 
-public partial class PageSetupUpdate
+public partial class PageSetupUpdate : IPageView
 {
+    public void OnNavigatedTo(object? parameter) { if (IsLoaded) CheckUpdate(); }
+    public void OnNavigatedFrom() { }
+
     private bool _initializing;
     private bool _checking;
     private ReleaseUpdateCandidate? _fork;
@@ -18,7 +21,7 @@ public partial class PageSetupUpdate
         Loaded += (_, _) =>
         {
             _initializing = true;
-            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {ModBase.versionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
+            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {Common.VersionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
             CheckStartupUpdate.Checked = Config.Update.UpdateMode != LauncherAutoUpdateBehavior.Disable;
             CheckHideNotice.Checked = Config.Update.HideCommunityNotice;
             ComboNetworkMode.SelectedIndex = (int)Config.Update.NetworkMode;
@@ -73,7 +76,7 @@ public partial class PageSetupUpdate
         }
         catch (Exception ex)
         {
-            ModBase.Log(ex, "[Update] 检查失败");
+            Common.Log(ex, "[Update] 检查失败");
             TextForkStatus.Text = TextUpstreamStatus.Text = "检查失败，请稍后重试。";
         }
         finally { _checking = false; ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = true; }
@@ -91,7 +94,7 @@ public partial class PageSetupUpdate
     private async void UpstreamUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_upstream);
     private void CheckAgain_Click(object sender, MouseButtonEventArgs e) => CheckUpdate();
     private void ForkRelease_Click(object sender, MouseButtonEventArgs e) =>
-        ModBase.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
+        Common.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
     private void UpstreamRelease_Click(object sender, MouseButtonEventArgs e) =>
-        ModBase.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
+        Common.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
 }

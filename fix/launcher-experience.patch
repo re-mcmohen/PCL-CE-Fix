@@ -517,10 +517,10 @@ index 00000000..127dd091
 +    }
 +}
 diff --git a/PCL.Core/App/Config.cs b/PCL.Core/App/Config.cs
-index 01f4a52b..66e4cf3f 100644
+index 69459b4b..44ff1d03 100644
 --- a/PCL.Core/App/Config.cs
 +++ b/PCL.Core/App/Config.cs
-@@ -117,6 +117,10 @@ public static partial class Config
+@@ -112,6 +112,10 @@ public static partial class Config
      /// </summary>
      [ConfigGroup("Update")] partial class UpdateConfigGroup
      {
@@ -1046,7 +1046,7 @@ index f823a13c..33ce0e42 100644
      <PropertyGroup>
          <AssemblyTitle>PCL.Core</AssemblyTitle>
 diff --git a/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs b/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs
-index 8a4b584f..1ba74100 100644
+index f830aa47..af43e5bb 100644
 --- a/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs	
 +++ b/Plain Craft Launcher 2/Modules/Minecraft/ProfileUi.cs	
 @@ -179,14 +179,8 @@ public static class ProfileUi
@@ -1064,11 +1064,11 @@ index 8a4b584f..1ba74100 100644
 +    // PCL_CE_Fix: all profile types remain available regardless of region, network or existing accounts.
 +    public static bool CanCreateOtherProfile() => true;
  
-     public static void CreateProfile()
+     public static async Task CreateProfileAsync()
      {
 diff --git a/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs b/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs
 new file mode 100644
-index 00000000..4a968f2a
+index 00000000..b3c12bb3
 --- /dev/null
 +++ b/Plain Craft Launcher 2/Modules/Updates/ForkUpdateService.cs	
 @@ -0,0 +1,109 @@
@@ -1090,7 +1090,7 @@ index 00000000..4a968f2a
 +        new HttpClient { Timeout = TimeSpan.FromSeconds(8) },
 +        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
 +        System.Runtime.InteropServices.Architecture.Arm64,
-+        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
++        log: (repository, error) => Common.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
 +    private static readonly SemaphoreSlim InstallLock = new(1, 1);
 +    private static readonly object RefreshLock = new();
 +    private static Task _backgroundRefresh = Task.CompletedTask;
@@ -1100,7 +1100,7 @@ index 00000000..4a968f2a
 +        GitHubUpdateRoutes.Get(url, Config.Update.NetworkMode, DeviceRegion);
 +    public static bool Installing { get; private set; }
 +
-+    public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(ModBase.versionBaseName,
++    public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(Common.VersionBaseName,
 +        Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag, ReleaseUpdatePolicy.CurrentBuildTime);
 +
 +    public static Task<RepositoryUpdateResult[]> CheckAsync(bool force = false) => Client.CheckAsync(force);
@@ -1113,7 +1113,7 @@ index 00000000..4a968f2a
 +            _backgroundRefresh = Task.Run(async () =>
 +            {
 +                try { await CheckAsync().ConfigureAwait(false); }
-+                catch (Exception ex) { ModBase.Log(ex, "[Update] 后台检查失败"); }
++                catch (Exception ex) { Common.Log(ex, "[Update] 后台检查失败"); }
 +            });
 +        }
 +    }
@@ -1121,7 +1121,7 @@ index 00000000..4a968f2a
 +    public static void NotifyInBackground() => _ = Task.Run(async () =>
 +    {
 +        try { await CheckAndNotifyAsync().ConfigureAwait(false); }
-+        catch (Exception ex) { ModBase.Log(ex, "[Update] 后台更新通知失败"); }
++        catch (Exception ex) { Common.Log(ex, "[Update] 后台更新通知失败"); }
 +    });
 +
 +    public static async Task CheckAndNotifyAsync()
@@ -1129,13 +1129,13 @@ index 00000000..4a968f2a
 +        var results = await CheckAsync().ConfigureAwait(false);
 +        var available = results.Where(r => r.Release is not null && IsNewer(r.Release)).ToArray();
 +        if (available.Length == 0) return;
-+        ModBase.RunInUi(() =>
++        Common.RunInUi(() =>
 +        {
 +            var names = string.Join("\n", available.Select(r =>
 +                $"{(r.Release!.IsFork ? "PCL_CE_Fix（保留补丁）" : "上游 PCL CE（原版）")}：{r.Release.Tag}"));
-+            if (ModMain.MyMsgBox($"检测到可用更新：\n{names}\n\n请在更新页面选择来源，不会自动切换版本。",
++            if (Launcher.MyMsgBox($"检测到可用更新：\n{names}\n\n请在更新页面选择来源，不会自动切换版本。",
 +                    "启动器更新", "选择更新来源", "稍后") == 1)
-+                ModMain.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
++                Launcher.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
 +        });
 +    }
 +
@@ -1146,27 +1146,27 @@ index 00000000..4a968f2a
 +        try
 +        {
 +            if (UpdateManager.isUpdateWaitingRestart ||
-+                UpdateManager.updateLoader?.State == ModBase.LoadState.Loading)
++                UpdateManager.updateLoader?.State == Common.LoadState.Loading)
 +                throw new InvalidOperationException("已有更新任务，请先完成该任务。");
 +            Installing = true;
 +            var source = release.IsFork ? "PCL_CE_Fix（保留区域限制补丁）" : "上游 PCL CE（原版，可能恢复区域限制）";
-+            if (ModMain.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
++            if (Launcher.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
 +                    "确认更新来源", "安装并重启", "取消", isWarn: !release.IsFork) != 1) return;
 +            output = Path.Combine(Basics.ExecutableDirectory, "PCL", "Updates", Guid.NewGuid().ToString("N"), "Launcher.exe");
 +            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 +            // Reuse the existing taskbar download UI, then verify the exact asset selected by the player.
-+            var download = new ModLoader.LoaderCombo<int>($"更新 {source}",
-+                new List<ModLoader.LoaderBase>
++            var download = new Loading.LoaderCombo<int>($"更新 {source}",
++                new List<Loading.LoaderBase>
 +                {
 +                    new LoaderDownload("下载启动器", new List<DownloadFile>
-+                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new ModBase.FileChecker(hash: release.Sha256)) })
++                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new Common.FileChecker(hash: release.Sha256)) })
 +                });
 +            UpdateManager.updateLoader = null;
 +            download.Start();
-+            ModLoader.LoaderTaskbarAdd(download);
-+            ModMain.frmMain.BtnExtraDownload.ShowRefresh();
++            Loading.LoaderTaskbarAdd(download);
++            Launcher.frmMain.BtnExtraDownload.ShowRefresh();
 +            await Task.Run(() => download.WaitForExit());
-+            var hash = ModBase.GetFileSHA256(output);
++            var hash = Common.GetFileSha256(output);
 +            if (!string.Equals(hash, release.Sha256, StringComparison.OrdinalIgnoreCase))
 +                throw new InvalidDataException("下载文件的 SHA-256 校验失败，已停止安装。");
 +            UpdateManager.UpdateRestart(true, verifiedSource: output, expectedSha256: release.Sha256);
@@ -1174,15 +1174,15 @@ index 00000000..4a968f2a
 +        catch (Exception ex)
 +        {
 +            try { if (output is not null && File.Exists(output)) File.Delete(output); }
-+            catch (Exception cleanupError) { ModBase.Log(cleanupError, "[Update] 清理下载文件失败"); }
-+            ModBase.Log(ex, "[Update] 安装失败");
++            catch (Exception cleanupError) { Common.Log(cleanupError, "[Update] 清理下载文件失败"); }
++            Common.Log(ex, "[Update] 安装失败");
 +            HintService.Hint($"更新失败：{ex.Message}", HintType.Error);
 +        }
 +        finally { Installing = false; InstallLock.Release(); }
 +    }
 +}
 diff --git a/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs b/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs
-index bb48ef70..ca57e82a 100644
+index 23552e5a..8e11a2b0 100644
 --- a/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs	
 +++ b/Plain Craft Launcher 2/Modules/Updates/UpdateManager.cs	
 @@ -1,4 +1,4 @@
@@ -1191,7 +1191,7 @@ index bb48ef70..ca57e82a 100644
  using System.Diagnostics;
  using System.IO;
  using PCL.Core.App;
-@@ -35,167 +35,47 @@ public static class UpdateManager
+@@ -35,180 +35,47 @@ public static class UpdateManager
      
      public static UpdateEnums.VersionStatus GetVersionStatus()
      {
@@ -1200,11 +1200,13 @@ index bb48ef70..ca57e82a 100644
 -            if (IsCurrentVersionBeta && (int)Config.Update.UpdateChannel != 1)
 -            {
 -                var isNewerThanStable = remoteServer.IsLatest(UpdateChannel.stable,
--                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
--                    ModBase.versionCode);
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
+-                    SemVer.Parse(Common.VersionBaseName),
+-                    Common.VersionCode);
 -                var isBetaLatest = remoteServer.IsLatest(UpdateChannel.beta,
--                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
--                    ModBase.versionCode);
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
+-                    SemVer.Parse(Common.VersionBaseName),
+-                    Common.VersionCode);
 -                return isNewerThanStable && isBetaLatest
 -                    ? UpdateEnums.VersionStatus.Latest
 -                    : UpdateEnums.VersionStatus.NotLatest;
@@ -1212,17 +1214,18 @@ index bb48ef70..ca57e82a 100644
 -
 -            return remoteServer.IsLatest(
 -                IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
--                SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, SemVer.Parse(ModBase.versionBaseName),
--                ModBase.versionCode)
+-                SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
+-                SemVer.Parse(Common.VersionBaseName),
+-                Common.VersionCode)
 -                ? UpdateEnums.VersionStatus.Latest
 -                : UpdateEnums.VersionStatus.NotLatest;
 -        }
 -        catch (Exception ex)
 -        {
--            ModBase.Log(
+-            Common.Log(
 -                ex,
 -                Lang.Text("Update.Check.Failed"),
--                ModBase.LogLevel.Hint,
+-                Common.LogLevel.Hint,
 -                userSummary: Lang.Text("Update.Check.Failed"));
 -            return UpdateEnums.VersionStatus.Unknown;
 -        }
@@ -1237,12 +1240,12 @@ index bb48ef70..ca57e82a 100644
      }
 -    
 +
-     public static ModLoader.LoaderCombo<JsonObject> updateLoader;
+     public static Loading.LoaderCombo<JsonObject> updateLoader;
  
      public static void UpdateStart(UpdateEnums.UpdateType type, string receivedKey = null, bool forceValidated = false)
      {
--        var dlTargetPath = ModBase.exePath + @"PCL\Plain Craft Launcher Community Edition.exe";
--        ModBase.RunInNewThread(() =>
+-        var dlTargetPath = Common.ExePath + @"PCL\Plain Craft Launcher Community Edition.exe";
+-        Common.RunInNewThread(() =>
 -        {
 -            try
 -            {
@@ -1251,81 +1254,91 @@ index bb48ef70..ca57e82a 100644
 -                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64
 -                );
 -
--                ModBase.WriteFile($"{ModBase.pathTemp}CEUpdateLog.md", version.Changelog);
--                ModBase.Log($"[Update] 远程最新版本: {version.VersionName}, 当前版本: {ModBase.versionBaseName}");
--                if (!(SemVer.Parse(version.VersionName) > SemVer.Parse(ModBase.versionBaseName)))
+-                Common.WriteFile($"{Common.pathTemp}CEUpdateLog.md", version.Changelog);
+-                Common.Log(
+-                    $"[Update] 远程最新版本: {version.VersionName}, 当前版本: {Common.VersionBaseName}");
+-                if (!(SemVer.Parse(version.VersionName) > SemVer.Parse(Common.VersionBaseName)))
 -                    return;
 -                if (type == UpdateEnums.UpdateType.PromptOnly)
 -                {
--                    ModBase.RunInUi(() =>
+-                    Common.RunInUi(() =>
 -                    {
--                        if (ModMain.MyMsgBox(
--                                Lang.Text("Update.Available", ModBase.versionBaseName, version.VersionName),
+-                        if (Launcher.MyMsgBox(
+-                                Lang.Text("Update.Available", Common.VersionBaseName,
+-                                    version.VersionName),
 -                                Lang.Text("Update.Title"),
 -                                Lang.Text("Update.Action"),
 -                                Lang.Text("Common.Action.Cancel")
 -                            ) == 1)
--                            ModMain.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
+-                            Launcher.frmMain.PageChange(FormMain.PageType.Setup,
+-                                FormMain.PageSubType.SetupUpdate);
 -                    });
 -                    return;
 -                    // 构造步骤加载器
 -                }
 -
--                var loaders = new List<ModLoader.LoaderBase>();
+-                var loaders = new List<Loading.LoaderBase>();
 -                // 下载
 -                loaders.AddRange(remoteServer.GetDownloadLoader(
 -                    IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
 -                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, dlTargetPath));
--                loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Check"), _ =>
+-                loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Check"), _ =>
 -                {
--                    var curHash = ModBase.GetFileSHA256(dlTargetPath);
+-                    var curHash = Common.GetFileSha256(dlTargetPath);
 -                    if ((curHash ?? "") != (version.Sha256 ?? ""))
 -                        throw new Exception(Lang.Text("Update.Error.Sha256Mismatch", version.Sha256, curHash));
 -                }));
 -                if (type == UpdateEnums.UpdateType.UpdateNow)
--                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Install"), _ => UpdateRestart(true)));
+-                    loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Install"),
+-                        _ => UpdateRestart(true)));
 -                else if (type == UpdateEnums.UpdateType.Silent)
--                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.Prepare"), _ => isUpdateWaitingRestart = true));
+-                    loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Prepare"),
+-                        _ => isUpdateWaitingRestart = true));
 -                else if (type == UpdateEnums.UpdateType.DownloadAndPrompt)
--                    loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.ShowButton"), _ =>
+-                    loaders.Add(new Loading.LoaderTask<int, int>(
+-                        Lang.Text("Update.Task.ShowButton"), _ =>
 -                    {
 -                        isUpdateWaitingRestart = true;
--                        ModBase.RunInUi(() =>
+-                        Common.RunInUi(() =>
 -                        {
--                            ModMain.frmMain.BtnExtraUpdateRestart.ToolTip =
--                                Lang.Text("Main.Extra.UpdateRestart.ToolTipWithVersion", ModBase.versionBaseName, version.VersionName);
--                            ModMain.frmMain.BtnExtraUpdateRestart.ShowRefresh();
--                            ModMain.frmMain.BtnExtraUpdateRestart.Ribble();
+-                            Launcher.frmMain.BtnExtraUpdateRestart.ToolTip =
+-                                Lang.Text("Main.Extra.UpdateRestart.ToolTipWithVersion",
+-                                    Common.VersionBaseName, version.VersionName);
+-                            Launcher.frmMain.BtnExtraUpdateRestart.ShowRefresh();
+-                            Launcher.frmMain.BtnExtraUpdateRestart.Ribble();
 -                        });
 -                    })
 -                    {
 -                        show = false
 -                    });
--                loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Update.Task.RefreshSettings"), _ =>
+-                loaders.Add(new Loading.LoaderTask<int, int>(
+-                    Lang.Text("Update.Task.RefreshSettings"), _ =>
 -                {
--                    if (ModMain.frmSetupUpdate is not null)
--                        ModBase.RunInUi(() =>
+-                    if (Launcher.frmSetupUpdate is not null)
+-                        Common.RunInUi(() =>
 -                        {
--                            ModMain.frmSetupUpdate.BtnUpdate.Text = Lang.Text("Update.Task.RestartInstall");
--                            ModMain.frmSetupUpdate.BtnUpdate.IsEnabled = true;
+-                            Launcher.frmSetupUpdate.BtnUpdate.Text =
+-                                Lang.Text("Update.Task.RestartInstall");
+-                            Launcher.frmSetupUpdate.BtnUpdate.IsEnabled = true;
 -                        });
 -                })
 -                {
 -                    show = false
 -                });
 -                // 启动
--                updateLoader = new ModLoader.LoaderCombo<JsonObject>(Lang.Text("Update.Title"), loaders);
+-                updateLoader =
+-                    new Loading.LoaderCombo<JsonObject>(Lang.Text("Update.Title"), loaders);
 -                updateLoader.Start();
 -                if (type == UpdateEnums.UpdateType.UpdateNow)
 -                {
--                    ModLoader.LoaderTaskbarAdd(updateLoader);
--                    ModMain.frmMain.BtnExtraDownload.ShowRefresh();
--                    ModMain.frmMain.BtnExtraDownload.Ribble();
+-                    Loading.LoaderTaskbarAdd(updateLoader);
+-                    Launcher.frmMain.BtnExtraDownload.ShowRefresh();
+-                    Launcher.frmMain.BtnExtraDownload.Ribble();
 -                }
 -            }
 -            catch (Exception ex)
 -            {
--                ModBase.Log(ex, "[Update] 获取启动器更新失败");
+-                Common.Log(ex, "[Update] 获取启动器更新失败");
 -                if (type != UpdateEnums.UpdateType.Silent)
 -                    HintService.Hint(Lang.Text("Update.Error.FetchFailed"), HintType.Error);
 -            }
@@ -1339,7 +1352,7 @@ index bb48ef70..ca57e82a 100644
 +        string? verifiedSource = null, string? expectedSha256 = null)
      {
 -        try
-+        var fileName = verifiedSource ?? Path.Combine(ModBase.exePath, "PCL", "Plain Craft Launcher Community Edition.exe");
++        var fileName = verifiedSource ?? Path.Combine(Common.ExePath, "PCL", "Plain Craft Launcher Community Edition.exe");
 +        if (!File.Exists(fileName)) throw new FileNotFoundException("未找到更新文件", fileName);
 +        // Run a separate copy of our updater, including when switching to an upstream release.
 +        // Running the current executable itself would keep the destination locked.
@@ -1348,23 +1361,23 @@ index bb48ef70..ca57e82a 100644
 +        if (verifiedSource is not null) File.Copy(Basics.ExecutablePath, helper, overwrite: false);
 +        var start = new ProcessStartInfo(helper)
          {
--            var fileName = ModBase.exePath + @"PCL\Plain Craft Launcher Community Edition.exe";
+-            var fileName = Common.ExePath + @"PCL\Plain Craft Launcher Community Edition.exe";
 -            if (!File.Exists(fileName))
 -            {
--                ModBase.Log("[System] 更新失败：未找到更新文件");
+-                Common.Log("[System] 更新失败：未找到更新文件");
 -                return;
 -            }
 -
 -            // id old new restart
 -            var text =
 -                $"update {Process.GetCurrentProcess().Id} \"{Basics.ExecutablePath}\" \"{fileName}\" {(triggerRestart ? "true" : "false")}";
--            ModBase.Log("[System] 更新程序启动，参数：" + text);
+-            Common.Log("[System] 更新程序启动，参数：" + text);
 -            Process.Start(new ProcessStartInfo(fileName)
 -                { WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true, Arguments = text });
 -            if (triggerRestartAndByEnd)
 -            {
--                ModMain.frmMain.EndProgram(false, true);
--                ModBase.Log("[System] 已由于更新强制结束程序");
+-                Launcher.frmMain.EndProgram(false, true);
+-                Common.Log("[System] 已由于更新强制结束程序");
 -            }
 -        }
 -        catch (Win32Exception ex)
@@ -1377,40 +1390,68 @@ index bb48ef70..ca57e82a 100644
 +        using var updater = Process.Start(start) ?? throw new IOException("无法启动更新程序");
 +        if (triggerRestartAndByEnd)
          {
--            ModBase.Log(ex, "自动更新时触发 Win32 错误，疑似被拦截");
--            ModMain.MyMsgBox(
--                Lang.Text("Update.Error.UpdateBlockedMessage", ModBase.exePath),
+-            Common.Log(ex, "自动更新时触发 Win32 错误，疑似被拦截");
+-            Launcher.MyMsgBox(
+-                Lang.Text("Update.Error.UpdateBlockedMessage", Common.ExePath),
 -                Lang.Text("Update.Error.UpdateBlocked"),
 -                Lang.Text("Common.Action.Confirm"),
 -                "",
 -                "",
 -                true);
-+            ModMain.frmMain.EndProgram(false, true);
-+            ModBase.Log("[System] 已由于更新强制结束程序");
++            Launcher.frmMain.EndProgram(false, true);
++            Common.Log("[System] 已由于更新强制结束程序");
          }
      }
  
-@@ -243,25 +123,8 @@ public static class UpdateManager
+@@ -224,15 +91,13 @@ public static class UpdateManager
+             SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64);
+         if (target is null)
+             throw new Exception(Lang.Text("Update.Error.UnableToGetUpdate"));
+-        if (File.Exists(latestPCLPath) &&
+-            (Common.GetFileSha256(latestPCLPath) ?? "") == (target.Sha256 ?? ""))
++        if (File.Exists(latestPCLPath) && (Common.GetFileSha256(latestPCLPath) ?? "") == (target.Sha256 ?? ""))
+         {
+             Common.Log("[System] 最新版 PCL 已存在，跳过下载");
+             return;
+         }
+ 
+-        if ((Common.GetFileSha256(Basics.ExecutablePath) ?? "") ==
+-            (target.Sha256 ?? "")) // 正在使用的版本符合要求，直接拿来用
++        if ((Common.GetFileSha256(Basics.ExecutablePath) ?? "") == (target.Sha256 ?? "")) // 正在使用的版本符合要求，直接拿来用
+         {
+             Common.CopyFile(Basics.ExecutablePath, latestPCLPath);
+             return;
+@@ -240,8 +105,7 @@ public static class UpdateManager
+ 
+         var loaders = remoteServer.GetDownloadLoader(UpdateChannel.stable,
+             SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, latestPCLPath);
+-        var loader =
+-            new Loading.LoaderCombo<int>(Lang.Text("Update.Task.DownloadLatestStable"), loaders);
++        var loader = new Loading.LoaderCombo<int>(Lang.Text("Update.Task.DownloadLatestStable"), loaders);
+         loader.Start();
+         loader.WaitForExit();
+     }
+@@ -259,25 +123,8 @@ public static class UpdateManager
  
      private static void ScheduleBasedOnConfig()
      {
 -        switch (Config.Update.UpdateMode)
 -        {
 -            case LauncherAutoUpdateBehavior.DownloadAndInstall:
--                ModBase.Log("[Update] 更新设置: 自动下载并安装更新");
+-                Common.Log("[Update] 更新设置: 自动下载并安装更新");
 -                if (GetVersionStatus() != UpdateEnums.VersionStatus.Latest)
 -                    UpdateStart(UpdateEnums.UpdateType.Silent);
 -                break;
 -            case LauncherAutoUpdateBehavior.DownloadAndAnnounce:
--                ModBase.Log("[Update] 更新设置: 自动下载并提示更新");
+-                Common.Log("[Update] 更新设置: 自动下载并提示更新");
 -                UpdateStart(UpdateEnums.UpdateType.DownloadAndPrompt);
 -                break;
 -            case LauncherAutoUpdateBehavior.AnnounceOnly:
--                ModBase.Log("[Update] 更新设置: 提示更新");
+-                Common.Log("[Update] 更新设置: 提示更新");
 -                UpdateStart(UpdateEnums.UpdateType.PromptOnly);
 -                break;
 -            default:
--                ModBase.Log("[Update] 更新设置: 不自动检查更新");
+-                Common.Log("[Update] 更新设置: 不自动检查更新");
 -                return;
 -        }
 +        if (Config.Update.UpdateMode == LauncherAutoUpdateBehavior.Disable) return;
@@ -1418,22 +1459,22 @@ index bb48ef70..ca57e82a 100644
      }
  
      /// <summary>
-@@ -270,8 +133,10 @@ public static class UpdateManager
+@@ -286,8 +133,10 @@ public static class UpdateManager
      /// <param name="IsUpdate">是否为更新时启动</param>
      public static void ShowCEAnnounce()
      {
--        ModMain.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
+-        Launcher.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
 -            Lang.Text("Update.CommunityNotice.Title"),
 -            Lang.Text("Update.CommunityNotice.Confirm"));
 +        if (Config.Update.HideCommunityNotice) return;
-+        if (ModMain.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
++        if (Launcher.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
 +                Lang.Text("Update.CommunityNotice.Title"),
 +                Lang.Text("Update.CommunityNotice.Confirm"), "不再提醒") == 2)
 +            Config.Update.HideCommunityNotice = true;
      }
  }
 diff --git a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml
-index c75b7c88..389d3d97 100644
+index 11298eb2..389d3d97 100644
 --- a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml	
 +++ b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml	
 @@ -1,172 +1,47 @@
@@ -1514,7 +1555,7 @@ index c75b7c88..389d3d97 100644
 +                    <local:MyButton x:Name="BtnCheckAgain" Text="同时检查两个仓库" Height="32" HorizontalAlignment="Left" Padding="15,0" Click="CheckAgain_Click" />
                  </StackPanel>
              </local:MyCard>
--            <local:MyCard x:Name="CardUpdate" Margin="0,15">
+-            <local:MyCard x:Name="CardUpdate" Margin="0,15" Visibility="{Binding ShowUpdateCard, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
 -                <StackPanel Margin="20,20,20,20">
 -                    <Grid>
 -                        <Grid.ColumnDefinitions>
@@ -1536,7 +1577,7 @@ index c75b7c88..389d3d97 100644
 -                        <local:MyImage x:Name="ImgUpdateIcon" Source="https://www.pclc.cc/img/pcl-ce/icon.webp"
 -                                       Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50"
 -                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
--                        <TextBlock x:Name="TextUpdateName" Text="PCL CE 2.14.0" FontWeight="Bold" FontSize="20"
+-                        <TextBlock x:Name="TextUpdateName" Text="{Binding UpdateNameText, Mode=OneWay}" FontWeight="Bold" FontSize="20"
 -                                   Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
 -                        <TextBlock x:Name="TextUpdateDesc" Text="by PCL-Community" FontSize="14" Grid.Row="2"
 -                                   Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Top" />
@@ -1563,7 +1604,7 @@ index c75b7c88..389d3d97 100644
 +                    </StackPanel>
                  </StackPanel>
              </local:MyCard>
--            <local:MyCard x:Name="CardCheck" Margin="0,15" Visibility="Collapsed">
+-            <local:MyCard x:Name="CardCheck" Margin="0,15" Visibility="{Binding ShowCheckCard, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
 -                <StackPanel Margin="20,20,20,20">
 -                    <Grid>
 -                        <Grid.ColumnDefinitions>
@@ -1583,11 +1624,11 @@ index c75b7c88..389d3d97 100644
 -                               Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left"
 -                               VerticalAlignment="Center" />
 -                        <!-- <local:MyImage x:Name="ImgUpdateIcon" FallbackSource="pack://application:,,,/images/icon.ico" Source="https://www.pclc.cc/img/pcl-ce/icon.webp" Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Height="50" Width="50" HorizontalAlignment="Left" VerticalAlignment="Center"/> -->
--                        <TextBlock x:Name="TextCurrentVersion" Text="PCL CE 2.13.4" FontWeight="Bold" FontSize="20"
+-                        <TextBlock x:Name="TextCurrentVersion" Text="{Binding CurrentVersionText, Mode=OneWay}" FontWeight="Bold" FontSize="20"
 -                                   Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
--                        <TextBlock x:Name="TextCurrentDesc" Text="{DynamicResource Setup.Update.Latest}" FontSize="14" Grid.Row="2" Grid.Column="2"
+-                        <TextBlock x:Name="TextCurrentDesc" Text="{Binding CurrentDescText, Mode=OneWay}" FontSize="14" Grid.Row="2" Grid.Column="2"
 -                                   HorizontalAlignment="Left" VerticalAlignment="Top" />
--                        <local:MyButton x:Name="BtnCheckAgain" Text="{DynamicResource Setup.Update.CheckAgain}" ColorType="Highlight" Grid.Row="0"
+-                        <local:MyButton x:Name="BtnCheckAgain" Text="{DynamicResource Setup.Update.CheckAgain}" ColorType="Highlight" Grid.Row="0" IsEnabled="{Binding CheckAgainEnabled, Mode=OneWay}"
 -                                        Grid.RowSpan="2" Grid.Column="3" HorizontalAlignment="Stretch"
 -                                        VerticalAlignment="Stretch" Click="BtnCheckAgain_OnClick" />
 -                        <local:MyButton x:Name="BtnChangelog" Text="{DynamicResource Setup.Update.Changelog.View}" ColorType="Normal" Grid.Row="0"
@@ -1650,10 +1691,10 @@ index c75b7c88..389d3d97 100644
 \ No newline at end of file
 +</local:MyPageRight>
 diff --git a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs
-index ee0469c2..96c19292 100644
+index eefd1252..5101e63c 100644
 --- a/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
 +++ b/Plain Craft Launcher 2/Pages/PageSetup/PageSetupUpdate.xaml.cs	
-@@ -1,284 +1,97 @@
+@@ -1,327 +1,100 @@
 -﻿using System.Windows;
 -using System.Windows.Controls;
  using System.Windows.Input;
@@ -1665,8 +1706,13 @@ index ee0469c2..96c19292 100644
  
  namespace PCL;
  
- public partial class PageSetupUpdate
+ public partial class PageSetupUpdate : IPageView
  {
+-    private readonly PageSetupUpdateViewModel _vm = new();
+-    private bool _refreshed;
++    public void OnNavigatedTo(object? parameter) { if (IsLoaded) CheckUpdate(); }
++    public void OnNavigatedFrom() { }
+ 
 -    public VersionDataModel updateInfo;
 +    private bool _initializing;
 +    private bool _checking;
@@ -1676,53 +1722,21 @@ index ee0469c2..96c19292 100644
      public PageSetupUpdate()
      {
          InitializeComponent();
--        Loaded += (_, _) => Init();
+-        DataContext = _vm;
+-        Loaded += (_, _) => Refresh();
+-        Unloaded += PageSetupUpdate_Unloaded;
 -    }
 -
--    private void Init()
+-    public PageSetupUpdateViewModel ViewModel => _vm;
+-
+-    public void OnNavigatedTo(object? parameter) => Refresh();
+-
+-    public void OnNavigatedFrom()
 -    {
--        ModAnimation.AniBeginControl();
--        TextMirrorCDK.Password = Config.Update.MirrorChyanKey;
--
--        ComboSystemUpdateChannel.SelectedIndex = (int)Config.Update.UpdateChannel;
--        ComboSystemUpdateMode.SelectedIndex = (int)Config.Update.UpdateMode;
--
--        TextCurrentVersion.Text = "PCL CE " + VersionNameFormat(ModBase.versionBaseName);
--        ModAnimation.AniEndControl();
--        CheckUpdate();
--    }
--
--    private async Task<UpdateStatus> IsLatestAsync()
--    {
--        try
 +        Loaded += (_, _) =>
-         {
--            // 修复：使用 dynamic 绕过命名空间重名导致的编译期类型冲突，
--            // 或者你可以尝试替换为 PCL.Core.App.SemVer.Parse(ModBase.versionBaseName)
--            if (await UpdateManager.remoteServer.IsLatestAsync(
--                    UpdateManager.IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
--                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
--                    SemVer.Parse(ModBase.versionBaseName),
--                    ModBase.versionCode))
--            {
--                ModBase.Log("[Update] 已是最新版本");
--                return UpdateStatus.Latest;
--            }
--
--            ModBase.Log("[Update] 有可用的新版本");
--            return UpdateStatus.Available;
--        }
--        catch (Exception ex)
--        {
--            ModBase.Log(
--                ex,
--                Lang.Text("Setup.Update.Error.NetworkFailed"),
--                ModBase.LogLevel.Hint,
--                userSummary: Lang.Text("Setup.Update.Error.NetworkFailed"));
--            return UpdateStatus.Error;
--        }
++        {
 +            _initializing = true;
-+            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {ModBase.versionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
++            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {Common.VersionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
 +            CheckStartupUpdate.Checked = Config.Update.UpdateMode != LauncherAutoUpdateBehavior.Disable;
 +            CheckHideNotice.Checked = Config.Update.HideCommunityNotice;
 +            ComboNetworkMode.SelectedIndex = (int)Config.Update.NetworkMode;
@@ -1731,14 +1745,74 @@ index ee0469c2..96c19292 100644
 +        };
      }
  
--    public async void CheckUpdate()
+-    private void PageSetupUpdate_Unloaded(object sender, RoutedEventArgs e) => _refreshed = false;
+-
+-    private void Refresh()
 +    private void SettingsChanged(object sender, bool user)
      {
--        ModBase.Log("[Update] 开始检查更新");
--        CardUpdate.Visibility = Visibility.Collapsed;
--        CardCheck.Visibility = Visibility.Visible;
--        TextCurrentDesc.Text = Lang.Text("Setup.Update.Checking");
--        BtnCheckAgain.IsEnabled = false;
+-        if (_refreshed)
+-            return;
+-        _refreshed = true;
+-        Init();
++        if (_initializing || !IsLoaded) return;
++        Config.Update.HideCommunityNotice = CheckHideNotice.Checked == true;
++        Config.Update.UpdateMode = CheckStartupUpdate.Checked == true
++            ? LauncherAutoUpdateBehavior.AnnounceOnly : LauncherAutoUpdateBehavior.Disable;
+     }
+ 
+-    private void Init()
++    private void NetworkModeChanged(object sender, SelectionChangedEventArgs e)
+     {
+-        Animations.AniBeginControl();
+-        TextMirrorCDK.Password = Config.Update.MirrorChyanKey;
+-
+-        ComboSystemUpdateChannel.SelectedIndex = (int)Config.Update.UpdateChannel;
+-        ComboSystemUpdateMode.SelectedIndex = (int)Config.Update.UpdateMode;
+-
+-        _vm.Reload();
+-        Animations.AniEndControl();
++        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
++        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
+         CheckUpdate();
+     }
+ 
+-    private async Task<UpdateStatus> IsLatestAsync()
+-    {
+-        try
+-        {
+-            // 修复：使用 dynamic 绕过命名空间重名导致的编译期类型冲突，
+-            // 或者你可以尝试替换为 PCL.Core.App.SemVer.Parse(Common.VersionBaseName)
+-            if (await UpdateManager.remoteServer.IsLatestAsync(
+-                    UpdateManager.IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
+-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
+-                    SemVer.Parse(Common.VersionBaseName),
+-                    Common.VersionCode))
+-            {
+-                Common.Log("[Update] 已是最新版本");
+-                return UpdateStatus.Latest;
+-            }
+-
+-            Common.Log("[Update] 有可用的新版本");
+-            return UpdateStatus.Available;
+-        }
+-        catch (Exception ex)
+-        {
+-            Common.Log(
+-                ex,
+-                Lang.Text("Setup.Update.Error.NetworkFailed"),
+-                Common.LogLevel.Hint,
+-                userSummary: Lang.Text("Setup.Update.Error.NetworkFailed"));
+-            return UpdateStatus.Error;
+-        }
+-    }
+-
+     public async void CheckUpdate()
+     {
+-        Common.Log("[Update] 开始检查更新");
+-        _vm.ShowUpdateCard = false;
+-        _vm.ShowCheckCard = true;
+-        _vm.CurrentDescText = Lang.Text("Setup.Update.Checking");
+-        _vm.CheckAgainEnabled = false;
 -        switch (await IsLatestAsync())
 -        {
 -            case UpdateStatus.Available:
@@ -1750,7 +1824,7 @@ index ee0469c2..96c19292 100644
 -                        UpdateManager.IsCurrentVersionBeta
 -                            ? UpdateChannel.beta
 -                            : UpdateChannel.stable, SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64);
--                    TextUpdateName.Text = "PCL CE " + VersionNameFormat(updateInfo.VersionName);
+-                    _vm.UpdateNameText = "PCL CE " + VersionNameFormat(updateInfo.VersionName);
 -                    var summary = updateInfo.Changelog.Between("<summary>", "</summary>");
 -                    if (!updateInfo.Changelog.Contains("<summary>") || string.IsNullOrWhiteSpace(summary.Trim()))
 -                        TextChangelog.Text = Lang.Text("Setup.Update.Changelog.Empty");
@@ -1762,25 +1836,25 @@ index ee0469c2..96c19292 100644
 -                    checkUpdateEx = ex;
 -                }
 -
--                BtnCheckAgain.IsEnabled = true;
+-                _vm.CheckAgainEnabled = true;
 -                if (updateInfo is null)
 -                {
--                    TextCurrentDesc.Text = Lang.Text("Setup.Update.CheckFailed");
+-                    _vm.CurrentDescText = Lang.Text("Setup.Update.CheckFailed");
 -                    if (checkUpdateEx is not null)
--                        ModBase.Log(
+-                        Common.Log(
 -                            checkUpdateEx,
 -                            "[Update] 检查更新失败",
--                            ModBase.LogLevel.Msgbox,
+-                            Common.LogLevel.Msgbox,
 -                            userSummary: Lang.Text("Update.Check.Failed"));
 -                    else
--                        ModBase.Log(
+-                        Common.Log(
 -                            "[Update] 检查更新失败",
--                            ModBase.LogLevel.Msgbox,
+-                            Common.LogLevel.Msgbox,
 -                            userSummary: Lang.Text("Update.Check.Failed"));
 -                    return;
 -                }
 -
--                if (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == ModBase.LoadState.Loading)
+-                if (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == Common.LoadState.Loading)
 -                {
 -                    BtnUpdate_Timer();
 -                    BtnUpdate.IsEnabled = false;
@@ -1796,39 +1870,34 @@ index ee0469c2..96c19292 100644
 -                    BtnUpdate.IsEnabled = true;
 -                }
 -
--                CardUpdate.Visibility = Visibility.Visible;
--                CardCheck.Visibility = Visibility.Collapsed;
+-                _vm.ShowUpdateCard = true;
+-                _vm.ShowCheckCard = false;
 -                break;
 -            }
 -            case UpdateStatus.Latest:
 -            {
--                CardUpdate.Visibility = Visibility.Collapsed;
--                CardCheck.Visibility = Visibility.Visible;
--                BtnCheckAgain.IsEnabled = true;
--                TextCurrentDesc.Text = Lang.Text("Setup.Update.Latest");
+-                _vm.ShowUpdateCard = false;
+-                _vm.ShowCheckCard = true;
+-                _vm.CheckAgainEnabled = true;
+-                _vm.CurrentDescText = Lang.Text("Setup.Update.Latest");
 -                break;
 -            }
 -            case UpdateStatus.Error:
 -            {
--                CardUpdate.Visibility = Visibility.Collapsed;
--                CardCheck.Visibility = Visibility.Visible;
--                BtnCheckAgain.IsEnabled = true;
--                TextCurrentDesc.Text = Lang.Text("Setup.Update.CheckFailed");
+-                _vm.ShowUpdateCard = false;
+-                _vm.ShowCheckCard = true;
+-                _vm.CheckAgainEnabled = true;
+-                _vm.CurrentDescText = Lang.Text("Setup.Update.CheckFailed");
 -                break;
 -            }
 -        }
-+        if (_initializing || !IsLoaded) return;
-+        Config.Update.HideCommunityNotice = CheckHideNotice.Checked == true;
-+        Config.Update.UpdateMode = CheckStartupUpdate.Checked == true
-+            ? LauncherAutoUpdateBehavior.AnnounceOnly : LauncherAutoUpdateBehavior.Disable;
-     }
- 
+-    }
+-
 -    public void BtnUpdate_Timer()
-+    private void NetworkModeChanged(object sender, SelectionChangedEventArgs e)
-     {
--        while (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == ModBase.LoadState.Loading)
+-    {
+-        while (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == Common.LoadState.Loading)
 -        {
--            ModBase.RunInUi(() => BtnUpdate.Text = Lang.Number(UpdateManager.updateLoader.Progress, "P2"));
+-            Common.RunInUi(() => BtnUpdate.Text = Lang.Number(UpdateManager.updateLoader.Progress, "P2"));
 -            Thread.Sleep(200);
 -        }
 -    }
@@ -1840,91 +1909,116 @@ index ee0469c2..96c19292 100644
 -        UpdateManager.UpdateStart(UpdateEnums.UpdateType.UpdateNow);
 -    }
 -
--    private void BtnChangelogDetail_Click(object sender, EventArgs e)
+-    private async void BtnChangelogDetail_Click(object sender, EventArgs e)
 -    {
--        if (updateInfo is null)
--            ModMain.MyMsgBox(Lang.Text("Setup.Update.Changelog.Unavailable"), Lang.Text("Setup.Update.Changelog.Title"));
--        else
--            ModMain.MyMsgBoxMarkdown(updateInfo.Changelog, Lang.Text("Setup.Update.Changelog.Title"));
+-        var ctl = sender as Control;
+-        if (ctl is not null) ctl.IsEnabled = false;
+-        try
+-        {
+-            if (updateInfo is null)
+-                await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Changelog.Unavailable"), Lang.Text("Setup.Update.Changelog.Title"));
+-            else
+-                Launcher.MyMsgBoxMarkdown(updateInfo.Changelog, Lang.Text("Setup.Update.Changelog.Title"));
+-        }
+-        catch (Exception ex)
+-        {
+-            Common.Log(ex, "查看更新日志失败", Common.LogLevel.Feedback,
+-                userSummary: Lang.Text("Setup.Error.OperationFailed"));
+-        }
+-        finally
+-        {
+-            if (ctl is not null) ctl.IsEnabled = true;
+-        }
 -    }
 -
 -    private void ComboSystemUpdateMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
 -    {
--        if (!ModAnimation.AniExitsAnyControl())
+-        if (!Animations.AniExitsAnyControl())
 -            Config.Update.UpdateMode = (LauncherAutoUpdateBehavior)ComboSystemUpdateMode.SelectedIndex;
-+        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
-+        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
-+        CheckUpdate();
-     }
- 
--    private void ComboSystemUpdateBranch_SelectionChanged(object sender, SelectionChangedEventArgs e)
-+    public async void CheckUpdate()
-     {
--        if (ModAnimation.AniExitsAnyControl())
--            return;
+-    }
 -
--        var isCancelled = false;
--        switch (ComboSystemUpdateChannel.SelectedIndex)
+-    private async void ComboSystemUpdateBranch_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-    {
+-        var ctl = sender as Control;
+-        if (ctl is not null) ctl.IsEnabled = false;
 +        if (_checking) return;
 +        _checking = true;
 +        ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
 +        _fork = _upstream = null;
 +        TextForkStatus.Text = TextUpstreamStatus.Text = "正在检查…";
 +        TextForkNotes.Text = TextUpstreamNotes.Text = "";
-+        try
+         try
          {
--            case 0:
--            {
--                break;
--            }
--            case 1:
--            {
--                if (ModMain.MyMsgBox(Lang.Text("Setup.Update.Channel.Beta.Warning.Message"),
--                        Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
--                        Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
--                        Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
--                    isCancelled = true;
--                else
--                    CheckUpdate();
--                break;
--            }
--            case 2:
+-            if (Animations.AniExitsAnyControl())
+-                return;
+-
+-            var isCancelled = false;
+-            switch (ComboSystemUpdateChannel.SelectedIndex)
 +            var results = await ForkUpdateService.CheckAsync(force: true);
 +            foreach (var result in results)
              {
--                if (ModMain.MyMsgBox(Lang.Text("Setup.Update.Channel.Dev.Warning.Message"),
--                        Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
--                        Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
--                        Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
+-                case 0:
 -                {
--                    isCancelled = true;
 -                    break;
 -                }
--
--                var confirmText = Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.ExpectedInput");
--                var ret = ModMain.MyMsgBoxInput(
--                    Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Title"),
--                    Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Message", confirmText),
--                    button1: Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Submit"),
--                    button2: Lang.Text("Common.Action.Cancel"), isWarn: true);
--    
--                if (ret == confirmText)
+-                case 1:
 -                {
--                    CheckUpdate();
+-                    if (await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Channel.Beta.Warning.Message"),
+-                            Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
+-                            Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
+-                            Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
+-                        isCancelled = true;
+-                    else
+-                        CheckUpdate();
+-                    break;
 -                }
--                else
+-                case 2:
 +                var fork = result.Repository == ReleaseUpdatePolicy.ForkRepository;
 +                var status = fork ? TextForkStatus : TextUpstreamStatus;
 +                var notes = fork ? TextForkNotes : TextUpstreamNotes;
 +                var button = fork ? BtnForkUpdate : BtnUpdate;
 +                if (result.Release is not { } release)
                  {
--                    HintService.Hint(Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.WrongInput"));
--                    isCancelled = true;
+-                    if (await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Channel.Dev.Warning.Message"),
+-                            Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
+-                            Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
+-                            Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
+-                    {
+-                        isCancelled = true;
+-                        break;
+-                    }
+-
+-                    var confirmText = Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.ExpectedInput");
+-                    var ret = await Launcher.MyMsgBoxInputAsync(
+-                        Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Title"),
+-                        Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Message", confirmText),
+-                        button1: Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Submit"),
+-                        button2: Lang.Text("Common.Action.Cancel"), isWarn: true);
+-
+-                    if (ret == confirmText)
+-                    {
+-                        CheckUpdate();
+-                    }
+-                    else
+-                    {
+-                        HintService.Hint(Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.WrongInput"));
+-                        isCancelled = true;
+-                    }
+-                    break;
 +                    status.Text = result.Error;
 +                    continue;
                  }
--                break;
+-            }
+-
+-            if (isCancelled)
+-            {
+-                Animations.AniBeginControl();
+-                ComboSystemUpdateChannel.SelectedItem = e.RemovedItems[0];
+-                Animations.AniEndControl();
+-            }
+-            else
+-            {
+-                Config.Update.UpdateChannel = (Core.App.UpdateChannel)ComboSystemUpdateChannel.SelectedIndex;
 +                var newer = ForkUpdateService.IsNewer(release);
 +                status.Text = $"{release.Tag} · {(newer ? "有可用更新" : fork ? "无需更新（相同或较早的发布）" : "可选择切回此上游版本")}";
 +                notes.Text = release.Notes.Length > 1200 ? release.Notes[..1200] + "…" : release.Notes;
@@ -1932,18 +2026,15 @@ index ee0469c2..96c19292 100644
 +                if (fork) _fork = release; else _upstream = release;
              }
          }
--
--        if (isCancelled)
--        {
--            ModAnimation.AniBeginControl();
--            ComboSystemUpdateChannel.SelectedItem = e.RemovedItems[0];
--            ModAnimation.AniEndControl();
--        }
--        else
-+        catch (Exception ex)
+         catch (Exception ex)
          {
--            Config.Update.UpdateChannel = (Core.App.UpdateChannel)ComboSystemUpdateChannel.SelectedIndex;
-+            ModBase.Log(ex, "[Update] 检查失败");
+-            Common.Log(ex, "切换更新通道失败", Common.LogLevel.Feedback,
+-                userSummary: Lang.Text("Setup.Error.OperationFailed"));
+-        }
+-        finally
+-        {
+-            if (ctl is not null) ctl.IsEnabled = true;
++            Common.Log(ex, "[Update] 检查失败");
 +            TextForkStatus.Text = TextUpstreamStatus.Text = "检查失败，请稍后重试。";
          }
 +        finally { _checking = false; ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = true; }
@@ -1956,23 +2047,15 @@ index ee0469c2..96c19292 100644
 -
 -    private void BtnGetMirrorCDK_Click(object sender, MouseButtonEventArgs e)
 -    {
--        ModBase.OpenWebsite("https://mirrorchyan.com/");
+-        Common.OpenWebsite("https://mirrorchyan.com/");
 -    }
 -
 -    private void BtnChangelog_Click(object sender, MouseButtonEventArgs e)
 -    {
--        ModBase.OpenWebsite("https://github.com/PCL-Community/PCL2-CE/releases/v" + ModBase.versionBaseName);
+-        Common.OpenWebsite("https://github.com/PCL-Community/PCL2-CE/releases/v" + Common.VersionBaseName);
 -    }
 -
--    public string VersionNameFormat(string str)
--    {
--        str = str.Replace("v", "");
--        if (!str.Contains("-"))
--            return str;
--        var add = str.AfterLast("-");
--        str = str.BeforeLast("-");
--        return $"{str} {add.Replace(".", " ").Replace("beta", "Beta").Replace("rc", "RC")}";
--    }
+-    public string VersionNameFormat(string str) => PageSetupUpdateViewModel.VersionNameFormat(str);
 -
 -    private void BtnCheckAgain_OnClick(object sender, MouseButtonEventArgs e)
 +    private async Task InstallAsync(ReleaseUpdateCandidate? release)
@@ -1994,7 +2077,7 @@ index ee0469c2..96c19292 100644
 +    private async void UpstreamUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_upstream);
 +    private void CheckAgain_Click(object sender, MouseButtonEventArgs e) => CheckUpdate();
 +    private void ForkRelease_Click(object sender, MouseButtonEventArgs e) =>
-+        ModBase.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
++        Common.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
 +    private void UpstreamRelease_Click(object sender, MouseButtonEventArgs e) =>
-+        ModBase.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
++        Common.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
  }
