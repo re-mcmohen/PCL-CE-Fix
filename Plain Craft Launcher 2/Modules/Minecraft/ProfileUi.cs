@@ -179,14 +179,8 @@ public static class ProfileUi
         return uuid;
     }
 
-    public static bool CanCreateOtherProfile()
-    {
-#if DEBUG || DEBUGCI
-        return true;
-#else
-        return ProfileService.HasMicrosoftProfile || (Lang.IsFeaturesUnrestricted && ProfileService.Profiles.Count > 0) || NetworkHelper.IsNetworkAvailable() is false;
-#endif
-    }
+    // PCL_CE_Fix: all profile types remain available regardless of region, network or existing accounts.
+    public static bool CanCreateOtherProfile() => true;
 
     public static async Task CreateProfileAsync()
     {
