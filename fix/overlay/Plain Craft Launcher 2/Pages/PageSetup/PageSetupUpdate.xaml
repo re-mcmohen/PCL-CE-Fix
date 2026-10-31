@@ -1,0 +1,47 @@
+<local:MyPageRight xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:PCL"
+    x:Class="PCL.PageSetupUpdate" PanScroll="{Binding ElementName=PanBack}">
+    <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="25,25,25,10">
+            <local:MyCard>
+                <StackPanel Margin="20">
+                    <TextBlock x:Name="TextCurrentVersion" FontWeight="Bold" FontSize="18" TextWrapping="Wrap" />
+                    <TextBlock Margin="0,8,0,12" Text="分别检查两个仓库的最新正式发布。选择来源后才会下载安装并重启；不会自动切换回上游。" TextWrapping="Wrap" />
+                    <local:MyCheckBox x:Name="CheckStartupUpdate" Text="启动时检查本仓库和上游更新" Change="SettingsChanged" />
+                    <local:MyCheckBox x:Name="CheckHideNotice" Margin="0,8,0,12" Text="不再显示社区版启动提醒" Change="SettingsChanged" />
+                    <local:MyComboBox x:Name="ComboNetworkMode" Margin="0,0,0,8" SelectedIndex="0" SelectionChanged="NetworkModeChanged">
+                        <local:MyComboBoxItem Content="自动：大陆地区优先加速" />
+                        <local:MyComboBoxItem Content="加速：优先 GH-Proxy" />
+                        <local:MyComboBoxItem Content="直连 GitHub" />
+                    </local:MyComboBox>
+                    <TextBlock Margin="0,0,0,12" Text="加速由第三方 gh-proxy.com 提供，用于检查更新和下载安装文件；请求失败后回退直连。安装前仍校验 SHA-256。" TextWrapping="Wrap" />
+                    <local:MyButton x:Name="BtnCheckAgain" Text="同时检查两个仓库" Height="32" HorizontalAlignment="Left" Padding="15,0" Click="CheckAgain_Click" />
+                </StackPanel>
+            </local:MyCard>
+            <local:MyCard Margin="0,15,0,0">
+                <StackPanel Margin="20">
+                    <TextBlock Text="PCL_CE_Fix · 本仓库" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Margin="0,6,0,8" Text="re-mcmohen/PCL-CE-Fix · 保留解除区域安装限制的补丁" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TextForkStatus" Text="等待检查" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TextForkNotes" Margin="0,8,0,12" TextWrapping="Wrap" MaxHeight="180" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal">
+                        <local:MyButton x:Name="BtnForkUpdate" Text="更新 PCL_CE_Fix" Height="32" Padding="12,0" IsEnabled="False" Click="ForkUpdate_Click" />
+                        <local:MyButton Text="本仓库发布页（直连）" Margin="12,0,0,0" Height="32" Padding="12,0" Click="ForkRelease_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </local:MyCard>
+            <local:MyCard Margin="0,15,0,15">
+                <StackPanel Margin="20">
+                    <TextBlock Text="PCL CE · 上游原版" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Margin="0,6,0,8" Text="PCL-Community/PCL-CE · 切回原版后，区域安装限制及上游更新逻辑可能恢复" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TextUpstreamStatus" Text="等待检查" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TextUpstreamNotes" Margin="0,8,0,12" TextWrapping="Wrap" MaxHeight="180" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal">
+                        <local:MyButton x:Name="BtnUpdate" Text="切换到上游 PCL CE" Height="32" Padding="12,0" IsEnabled="False" Click="UpstreamUpdate_Click" />
+                        <local:MyButton Text="上游发布页（直连）" Margin="12,0,0,0" Height="32" Padding="12,0" Click="UpstreamRelease_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </local:MyCard>
+        </StackPanel>
+    </local:MyScrollViewer>
+</local:MyPageRight>

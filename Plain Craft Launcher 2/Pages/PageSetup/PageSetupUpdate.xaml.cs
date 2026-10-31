@@ -1,330 +1,100 @@
-using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Controls;
 using PCL.Core.App;
-using PCL.Core.Utils;
-using PCL.Core.App.Localization;
 using PCL.Core.Utils.OS;
 
 namespace PCL;
 
 public partial class PageSetupUpdate : IPageView
 {
-    private readonly PageSetupUpdateViewModel _vm = new();
-    private bool _refreshed;
+    public void OnNavigatedTo(object? parameter) { if (IsLoaded) CheckUpdate(); }
+    public void OnNavigatedFrom() { }
 
-    public VersionDataModel updateInfo;
+    private bool _initializing;
+    private bool _checking;
+    private ReleaseUpdateCandidate? _fork;
+    private ReleaseUpdateCandidate? _upstream;
 
     public PageSetupUpdate()
     {
         InitializeComponent();
-        DataContext = _vm;
-        Loaded += (_, _) => Refresh();
-        Unloaded += PageSetupUpdate_Unloaded;
+        Loaded += (_, _) =>
+        {
+            _initializing = true;
+            TextCurrentVersion.Text = $"当前：PCL_CE_Fix {Common.VersionBaseName} · {ReleaseUpdatePolicy.CurrentReleaseTag}";
+            CheckStartupUpdate.Checked = Config.Update.UpdateMode != LauncherAutoUpdateBehavior.Disable;
+            CheckHideNotice.Checked = Config.Update.HideCommunityNotice;
+            ComboNetworkMode.SelectedIndex = (int)Config.Update.NetworkMode;
+            _initializing = false;
+            CheckUpdate();
+        };
     }
 
-    public PageSetupUpdateViewModel ViewModel => _vm;
-
-    public void OnNavigatedTo(object? parameter) => Refresh();
-
-    public void OnNavigatedFrom()
+    private void SettingsChanged(object sender, bool user)
     {
+        if (_initializing || !IsLoaded) return;
+        Config.Update.HideCommunityNotice = CheckHideNotice.Checked == true;
+        Config.Update.UpdateMode = CheckStartupUpdate.Checked == true
+            ? LauncherAutoUpdateBehavior.AnnounceOnly : LauncherAutoUpdateBehavior.Disable;
     }
 
-    private void PageSetupUpdate_Unloaded(object sender, RoutedEventArgs e) => _refreshed = false;
-
-    private void Refresh()
+    private void NetworkModeChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_refreshed)
-            return;
-        _refreshed = true;
-        Init();
-    }
-
-    private void Init()
-    {
-        Animations.AniBeginControl();
-        TextMirrorCDK.Password = Config.Update.MirrorChyanKey;
-
-        ComboSystemUpdateChannel.SelectedIndex = (int)Config.Update.UpdateChannel;
-        ComboSystemUpdateMode.SelectedIndex = (int)Config.Update.UpdateMode;
-
-        _vm.Reload();
-        Animations.AniEndControl();
+        if (_initializing || !IsLoaded || ComboNetworkMode.SelectedIndex < 0) return;
+        Config.Update.NetworkMode = (UpdateNetworkMode)ComboNetworkMode.SelectedIndex;
         CheckUpdate();
-    }
-
-    private async Task<UpdateStatus> IsLatestAsync()
-    {
-        try
-        {
-            // 修复：使用 dynamic 绕过命名空间重名导致的编译期类型冲突，
-            // 或者你可以尝试替换为 PCL.Core.App.SemVer.Parse(Common.VersionBaseName)
-            if (await UpdateManager.remoteServer.IsLatestAsync(
-                    UpdateManager.IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
-                    SemVer.Parse(Common.VersionBaseName),
-                    Common.VersionCode))
-            {
-                Common.Log("[Update] 已是最新版本");
-                return UpdateStatus.Latest;
-            }
-
-            Common.Log("[Update] 有可用的新版本");
-            return UpdateStatus.Available;
-        }
-        catch (Exception ex)
-        {
-            Common.Log(
-                ex,
-                Lang.Text("Setup.Update.Error.NetworkFailed"),
-                Common.LogLevel.Hint,
-                userSummary: Lang.Text("Setup.Update.Error.NetworkFailed"));
-            return UpdateStatus.Error;
-        }
     }
 
     public async void CheckUpdate()
     {
-        Common.Log("[Update] 开始检查更新");
-        _vm.ShowUpdateCard = false;
-        _vm.ShowCheckCard = true;
-        _vm.CheckAgainEnabled = false;
-        TextCurrentDesc.TrySetLocalizedValue("Text", "Setup.Update.Checking");
-        switch (await IsLatestAsync())
-        {
-            case UpdateStatus.Available:
-            {
-                Exception checkUpdateEx = null;
-                try
-                {
-                    updateInfo = UpdateManager.remoteServer.GetLatestVersion(
-                        UpdateManager.IsCurrentVersionBeta
-                            ? UpdateChannel.beta
-                            : UpdateChannel.stable, SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64);
-                    _vm.UpdateNameText = "PCL CE " + VersionNameFormat(updateInfo.VersionName);
-                    var summary = updateInfo.Changelog.Between("<summary>", "</summary>");
-                    if (!updateInfo.Changelog.Contains("<summary>") || string.IsNullOrWhiteSpace(summary.Trim()))
-                        TextChangelog.TrySetLocalizedValue("Text", "Setup.Update.Changelog.Empty");
-                    else
-                        TextChangelog.Text = summary;
-                }
-                catch (Exception ex)
-                {
-                    checkUpdateEx = ex;
-                }
-
-                _vm.CheckAgainEnabled = true;
-                if (updateInfo is null)
-                {
-                    _vm.CurrentDescText = Lang.Text("Setup.Update.CheckFailed");
-                    TextCurrentDesc.TrySetLocalizedValue("Text", "Setup.Update.CheckFailed");
-                    if (checkUpdateEx is not null)
-                        Common.Log(
-                            checkUpdateEx,
-                            "[Update] 检查更新失败",
-                            Common.LogLevel.Msgbox,
-                            userSummary: Lang.Text("Update.Check.Failed"));
-                    else
-                        Common.Log(
-                            "[Update] 检查更新失败",
-                            Common.LogLevel.Msgbox,
-                            userSummary: Lang.Text("Update.Check.Failed"));
-                    return;
-                }
-
-                if (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == Common.LoadState.Loading)
-                {
-                    BtnUpdate_Timer();
-                    BtnUpdate.IsEnabled = false;
-                }
-                else if (UpdateManager.isUpdateWaitingRestart)
-                {
-                    BtnUpdate.TrySetLocalizedValue("Text", "Setup.Update.RestartInstall");
-                    BtnUpdate.IsEnabled = true;
-                }
-                else
-                {
-                    BtnUpdate.TrySetLocalizedValue("Text", "Setup.Update.Install");
-                    BtnUpdate.IsEnabled = true;
-                }
-
-                _vm.ShowUpdateCard = true;
-                _vm.ShowCheckCard = false;
-                break;
-            }
-            case UpdateStatus.Latest:
-            {
-                _vm.ShowUpdateCard = false;
-                _vm.ShowCheckCard = true;
-                _vm.CheckAgainEnabled = true;
-                _vm.CurrentDescText = Lang.Text("Setup.Update.Latest");
-                TextCurrentDesc.TrySetLocalizedValue("Text", "Setup.Update.Latest");
-                break;
-            }
-            case UpdateStatus.Error:
-            {
-                _vm.ShowUpdateCard = false;
-                _vm.ShowCheckCard = true;
-                _vm.CheckAgainEnabled = true;
-                _vm.CurrentDescText = Lang.Text("Setup.Update.CheckFailed");
-                TextCurrentDesc.TrySetLocalizedValue("Text", "Setup.Update.CheckFailed");
-                break;
-            }
-        }
-    }
-
-    public void BtnUpdate_Timer()
-    {
-        while (UpdateManager.updateLoader is not null && UpdateManager.updateLoader.State == Common.LoadState.Loading)
-        {
-            Common.RunInUi(() => BtnUpdate.Text = Lang.Number(UpdateManager.updateLoader.Progress, "P2"));
-            Thread.Sleep(200);
-        }
-    }
-
-    private void BtnUpdate_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (UpdateManager.isUpdateWaitingRestart) UpdateManager.UpdateRestart(true);
-        // 开始更新流程
-        UpdateManager.UpdateStart(UpdateEnums.UpdateType.UpdateNow);
-    }
-
-    private async void BtnChangelogDetail_Click(object sender, EventArgs e)
-    {
-        var ctl = sender as Control;
-        if (ctl is not null) ctl.IsEnabled = false;
+        if (_checking) return;
+        _checking = true;
+        ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
+        _fork = _upstream = null;
+        TextForkStatus.Text = TextUpstreamStatus.Text = "正在检查…";
+        TextForkNotes.Text = TextUpstreamNotes.Text = "";
         try
         {
-            if (updateInfo is null)
-                await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Changelog.Unavailable"), Lang.Text("Setup.Update.Changelog.Title"));
-            else
-                Launcher.MyMsgBoxMarkdown(updateInfo.Changelog, Lang.Text("Setup.Update.Changelog.Title"));
-        }
-        catch (Exception ex)
-        {
-            Common.Log(ex, "查看更新日志失败", Common.LogLevel.Feedback,
-                userSummary: Lang.Text("Setup.Error.OperationFailed"));
-        }
-        finally
-        {
-            if (ctl is not null) ctl.IsEnabled = true;
-        }
-    }
-
-    private void ComboSystemUpdateMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!Animations.AniExitsAnyControl())
-            Config.Update.UpdateMode = (LauncherAutoUpdateBehavior)ComboSystemUpdateMode.SelectedIndex;
-    }
-
-    private async void ComboSystemUpdateBranch_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        var ctl = sender as Control;
-        if (ctl is not null) ctl.IsEnabled = false;
-        try
-        {
-            if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
-                return;
-
-            var isCancelled = false;
-            switch (ComboSystemUpdateChannel.SelectedIndex)
+            var results = await ForkUpdateService.CheckAsync(force: true);
+            foreach (var result in results)
             {
-                case 0:
+                var fork = result.Repository == ReleaseUpdatePolicy.ForkRepository;
+                var status = fork ? TextForkStatus : TextUpstreamStatus;
+                var notes = fork ? TextForkNotes : TextUpstreamNotes;
+                var button = fork ? BtnForkUpdate : BtnUpdate;
+                if (result.Release is not { } release)
                 {
-                    break;
+                    status.Text = result.Error;
+                    continue;
                 }
-                case 1:
-                {
-                    if (await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Channel.Beta.Warning.Message"),
-                            Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
-                            Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
-                            Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
-                        isCancelled = true;
-                    else
-                        CheckUpdate();
-                    break;
-                }
-                case 2:
-                {
-                    if (await Launcher.MyMsgBoxAsync(Lang.Text("Setup.Update.Channel.Dev.Warning.Message"),
-                            Lang.Text("Setup.Update.Channel.Common.Warning.Title"),
-                            Lang.Text("Setup.Update.Channel.Common.Warning.Confirm"),
-                            Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)
-                    {
-                        isCancelled = true;
-                        break;
-                    }
-
-                    var confirmText = Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.ExpectedInput");
-                    var ret = await Launcher.MyMsgBoxInputAsync(
-                        Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Title"),
-                        Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Message", confirmText),
-                        button1: Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.Submit"),
-                        button2: Lang.Text("Common.Action.Cancel"), isWarn: true);
-
-                    if (ret == confirmText)
-                    {
-                        CheckUpdate();
-                    }
-                    else
-                    {
-                        HintService.Hint(Lang.Text("Setup.Update.Channel.Dev.FinalConfirm.WrongInput"));
-                        isCancelled = true;
-                    }
-                    break;
-                }
-            }
-
-            if (isCancelled)
-            {
-                Animations.AniBeginControl();
-                ComboSystemUpdateChannel.SelectedItem = e.RemovedItems[0];
-                Animations.AniEndControl();
-            }
-            else
-            {
-                Config.Update.UpdateChannel = (Core.App.UpdateChannel)ComboSystemUpdateChannel.SelectedIndex;
+                var newer = ForkUpdateService.IsNewer(release);
+                status.Text = $"{release.Tag} · {(newer ? "有可用更新" : fork ? "无需更新（相同或较早的发布）" : "可选择切回此上游版本")}";
+                notes.Text = release.Notes.Length > 1200 ? release.Notes[..1200] + "…" : release.Notes;
+                button.IsEnabled = !ForkUpdateService.Installing && (!fork || newer);
+                if (fork) _fork = release; else _upstream = release;
             }
         }
         catch (Exception ex)
         {
-            Common.Log(ex, "切换更新通道失败", Common.LogLevel.Feedback,
-                userSummary: Lang.Text("Setup.Error.OperationFailed"));
+            Common.Log(ex, "[Update] 检查失败");
+            TextForkStatus.Text = TextUpstreamStatus.Text = "检查失败，请稍后重试。";
         }
-        finally
-        {
-            if (ctl is not null) ctl.IsEnabled = true;
-        }
+        finally { _checking = false; ComboNetworkMode.IsEnabled = BtnCheckAgain.IsEnabled = true; }
     }
 
-    private void TextMirrorCDK_PasswordChanged(object sender, EventArgs e)
+    private async Task InstallAsync(ReleaseUpdateCandidate? release)
     {
-        Config.Update.MirrorChyanKey = TextMirrorCDK.Password;
-    }
-
-    private void BtnGetMirrorCDK_Click(object sender, MouseButtonEventArgs e)
-    {
-        Common.OpenWebsite("https://mirrorchyan.com/");
-    }
-
-    private void BtnChangelog_Click(object sender, MouseButtonEventArgs e)
-    {
-        Common.OpenWebsite("https://github.com/PCL-Community/PCL2-CE/releases/v" + Common.VersionBaseName);
-    }
-
-    public string VersionNameFormat(string str) => PageSetupUpdateViewModel.VersionNameFormat(str);
-
-    private void BtnCheckAgain_OnClick(object sender, MouseButtonEventArgs e)
-    {
+        if (release is null || ForkUpdateService.Installing) return;
+        BtnForkUpdate.IsEnabled = BtnUpdate.IsEnabled = false;
+        await ForkUpdateService.InstallAsync(release);
         CheckUpdate();
     }
 
-    private enum UpdateStatus
-    {
-        Checking = 0,
-        Available = 1,
-        Error = 2,
-        Latest = 3
-    }
+    private async void ForkUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_fork);
+    private async void UpstreamUpdate_Click(object sender, MouseButtonEventArgs e) => await InstallAsync(_upstream);
+    private void CheckAgain_Click(object sender, MouseButtonEventArgs e) => CheckUpdate();
+    private void ForkRelease_Click(object sender, MouseButtonEventArgs e) =>
+        Common.OpenWebsite(_fork?.PageUrl ?? "https://github.com/re-mcmohen/PCL-CE-Fix/releases");
+    private void UpstreamRelease_Click(object sender, MouseButtonEventArgs e) =>
+        Common.OpenWebsite(_upstream?.PageUrl ?? "https://github.com/PCL-Community/PCL-CE/releases");
 }

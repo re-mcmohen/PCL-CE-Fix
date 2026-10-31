@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using PCL.Core.App;
@@ -35,185 +35,47 @@ public static class UpdateManager
     
     public static UpdateEnums.VersionStatus GetVersionStatus()
     {
-        try
-        {
-            if (IsCurrentVersionBeta && (int)Config.Update.UpdateChannel != 1)
-            {
-                var isNewerThanStable = remoteServer.IsLatest(UpdateChannel.stable,
-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
-                    SemVer.Parse(Common.VersionBaseName),
-                    Common.VersionCode);
-                var isBetaLatest = remoteServer.IsLatest(UpdateChannel.beta,
-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
-                    SemVer.Parse(Common.VersionBaseName),
-                    Common.VersionCode);
-                return isNewerThanStable && isBetaLatest
-                    ? UpdateEnums.VersionStatus.Latest
-                    : UpdateEnums.VersionStatus.NotLatest;
-            }
-
-            return remoteServer.IsLatest(
-                IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
-                SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64,
-                SemVer.Parse(Common.VersionBaseName),
-                Common.VersionCode)
-                ? UpdateEnums.VersionStatus.Latest
-                : UpdateEnums.VersionStatus.NotLatest;
-        }
-        catch (Exception ex)
-        {
-            Common.Log(
-                ex,
-                Lang.Text("Update.Check.Failed"),
-                Common.LogLevel.Hint,
-                userSummary: Lang.Text("Update.Check.Failed"));
-            return UpdateEnums.VersionStatus.Unknown;
-        }
+        // This method is also called by UI actions: never wait for network here.
+        ForkUpdateService.RefreshInBackground();
+        var results = ForkUpdateService.Results;
+        if (results.Length == 0) return UpdateEnums.VersionStatus.Unknown;
+        if (results.Any(r => r.Release is not null && ForkUpdateService.IsNewer(r.Release)))
+            return UpdateEnums.VersionStatus.NotLatest;
+        return results.Any(r => r.Release is null)
+            ? UpdateEnums.VersionStatus.Unknown : UpdateEnums.VersionStatus.Latest;
     }
-    
+
     public static Loading.LoaderCombo<JsonObject> updateLoader;
 
     public static void UpdateStart(UpdateEnums.UpdateType type, string receivedKey = null, bool forceValidated = false)
     {
-        var dlTargetPath = Common.ExePath + @"PCL\Plain Craft Launcher Community Edition.exe";
-        Common.RunInNewThread(() =>
-        {
-            try
-            {
-                var version = remoteServer.GetLatestVersion(
-                    IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64
-                );
-
-                Common.WriteFile($"{Common.pathTemp}CEUpdateLog.md", version.Changelog);
-                Common.Log(
-                    $"[Update] 远程最新版本: {version.VersionName}, 当前版本: {Common.VersionBaseName}");
-                if (!(SemVer.Parse(version.VersionName) > SemVer.Parse(Common.VersionBaseName)))
-                    return;
-                if (type == UpdateEnums.UpdateType.PromptOnly)
-                {
-                    Common.RunInUi(() =>
-                    {
-                        if (Launcher.MyMsgBox(
-                                Lang.Text("Update.Available", Common.VersionBaseName,
-                                    version.VersionName),
-                                Lang.Text("Update.Title"),
-                                Lang.Text("Update.Action"),
-                                Lang.Text("Common.Action.Cancel")
-                            ) == 1)
-                            Launcher.frmMain.PageChange(FormMain.PageType.Setup,
-                                FormMain.PageSubType.SetupUpdate);
-                    });
-                    return;
-                    // 构造步骤加载器
-                }
-
-                var loaders = new List<Loading.LoaderBase>();
-                // 下载
-                loaders.AddRange(remoteServer.GetDownloadLoader(
-                    IsCurrentVersionBeta ? UpdateChannel.beta : UpdateChannel.stable,
-                    SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, dlTargetPath));
-                loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Check"), _ =>
-                {
-                    var curHash = Common.GetFileSha256(dlTargetPath);
-                    if ((curHash ?? "") != (version.Sha256 ?? ""))
-                        throw new Exception(Lang.Text("Update.Error.Sha256Mismatch", version.Sha256, curHash));
-                }));
-                if (type == UpdateEnums.UpdateType.UpdateNow)
-                    loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Install"),
-                        _ => UpdateRestart(true)));
-                else if (type == UpdateEnums.UpdateType.Silent)
-                    loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Update.Task.Prepare"),
-                        _ => isUpdateWaitingRestart = true));
-                else if (type == UpdateEnums.UpdateType.DownloadAndPrompt)
-                    loaders.Add(new Loading.LoaderTask<int, int>(
-                        Lang.Text("Update.Task.ShowButton"), _ =>
-                    {
-                        isUpdateWaitingRestart = true;
-                        Common.RunInUi(() =>
-                        {
-                            LocalizedText.TryBind(
-                                Launcher.frmMain.BtnExtraUpdateRestart,
-                                "ToolTip",
-                                () => Lang.Text(
-                                    "Main.Extra.UpdateRestart.ToolTipWithVersion",
-                                    Common.VersionBaseName,
-                                    version.VersionName));
-                            Launcher.frmMain.BtnExtraUpdateRestart.ShowRefresh();
-                            Launcher.frmMain.BtnExtraUpdateRestart.Ribble();
-                        });
-                    })
-                    {
-                        show = false
-                    });
-                loaders.Add(new Loading.LoaderTask<int, int>(
-                    Lang.Text("Update.Task.RefreshSettings"), _ =>
-                {
-                    if (Launcher.frmSetupUpdate is not null)
-                        Common.RunInUi(() =>
-                        {
-                            Launcher.frmSetupUpdate.BtnUpdate.TrySetLocalizedValue(
-                                "Text",
-                                "Update.Task.RestartInstall");
-                            Launcher.frmSetupUpdate.BtnUpdate.IsEnabled = true;
-                        });
-                })
-                {
-                    show = false
-                });
-                // 启动
-                updateLoader =
-                    new Loading.LoaderCombo<JsonObject>(Lang.Text("Update.Title"), loaders);
-                updateLoader.Start();
-                if (type == UpdateEnums.UpdateType.UpdateNow)
-                {
-                    Loading.LoaderTaskbarAdd(updateLoader);
-                    Launcher.frmMain.BtnExtraDownload.ShowRefresh();
-                    Launcher.frmMain.BtnExtraDownload.Ribble();
-                }
-            }
-            catch (Exception ex)
-            {
-                Common.Log(ex, "[Update] 获取启动器更新失败");
-                if (type != UpdateEnums.UpdateType.Silent)
-                    HintService.Hint(Lang.Text("Update.Error.FetchFailed"), HintType.Error);
-            }
-        });
+        // Always let the player select the distribution before downloading.
+        ForkUpdateService.NotifyInBackground();
     }
 
-    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true)
+    public static void UpdateRestart(bool triggerRestartAndByEnd, bool triggerRestart = true,
+        string? verifiedSource = null, string? expectedSha256 = null)
     {
-        try
+        var fileName = verifiedSource ?? Path.Combine(Common.ExePath, "PCL", "Plain Craft Launcher Community Edition.exe");
+        if (!File.Exists(fileName)) throw new FileNotFoundException("未找到更新文件", fileName);
+        // Run a separate copy of our updater, including when switching to an upstream release.
+        // Running the current executable itself would keep the destination locked.
+        var helper = verifiedSource is null ? fileName
+            : Path.Combine(Path.GetDirectoryName(fileName)!, "PCL_CE_Fix_Updater.exe");
+        if (verifiedSource is not null) File.Copy(Basics.ExecutablePath, helper, overwrite: false);
+        var start = new ProcessStartInfo(helper)
         {
-            var fileName = Common.ExePath + @"PCL\Plain Craft Launcher Community Edition.exe";
-            if (!File.Exists(fileName))
-            {
-                Common.Log("[System] 更新失败：未找到更新文件");
-                return;
-            }
-
-            // id old new restart
-            var text =
-                $"update {Process.GetCurrentProcess().Id} \"{Basics.ExecutablePath}\" \"{fileName}\" {(triggerRestart ? "true" : "false")}";
-            Common.Log("[System] 更新程序启动，参数：" + text);
-            Process.Start(new ProcessStartInfo(fileName)
-                { WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true, Arguments = text });
-            if (triggerRestartAndByEnd)
-            {
-                Launcher.frmMain.EndProgram(false, true);
-                Common.Log("[System] 已由于更新强制结束程序");
-            }
-        }
-        catch (Win32Exception ex)
+            UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(Basics.ExecutablePath)!
+        };
+        foreach (var argument in new[] { "update", Environment.ProcessId.ToString(), Basics.ExecutablePath,
+                     fileName, triggerRestart ? "true" : "false" }) start.ArgumentList.Add(argument);
+        if (expectedSha256 is not null) start.ArgumentList.Add(expectedSha256);
+        using var updater = Process.Start(start) ?? throw new IOException("无法启动更新程序");
+        if (triggerRestartAndByEnd)
         {
-            Common.Log(ex, "自动更新时触发 Win32 错误，疑似被拦截");
-            Launcher.MyMsgBox(
-                Lang.Text("Update.Error.UpdateBlockedMessage", Common.ExePath),
-                Lang.Text("Update.Error.UpdateBlocked"),
-                Lang.Text("Common.Action.Confirm"),
-                "",
-                "",
-                true);
+            Launcher.frmMain.EndProgram(false, true);
+            Common.Log("[System] 已由于更新强制结束程序");
         }
     }
 
@@ -229,15 +91,13 @@ public static class UpdateManager
             SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64);
         if (target is null)
             throw new Exception(Lang.Text("Update.Error.UnableToGetUpdate"));
-        if (File.Exists(latestPCLPath) &&
-            (Common.GetFileSha256(latestPCLPath) ?? "") == (target.Sha256 ?? ""))
+        if (File.Exists(latestPCLPath) && (Common.GetFileSha256(latestPCLPath) ?? "") == (target.Sha256 ?? ""))
         {
             Common.Log("[System] 最新版 PCL 已存在，跳过下载");
             return;
         }
 
-        if ((Common.GetFileSha256(Basics.ExecutablePath) ?? "") ==
-            (target.Sha256 ?? "")) // 正在使用的版本符合要求，直接拿来用
+        if ((Common.GetFileSha256(Basics.ExecutablePath) ?? "") == (target.Sha256 ?? "")) // 正在使用的版本符合要求，直接拿来用
         {
             Common.CopyFile(Basics.ExecutablePath, latestPCLPath);
             return;
@@ -245,8 +105,7 @@ public static class UpdateManager
 
         var loaders = remoteServer.GetDownloadLoader(UpdateChannel.stable,
             SystemInfo.IsArm64System ? UpdateArch.arm64 : UpdateArch.x64, latestPCLPath);
-        var loader =
-            new Loading.LoaderCombo<int>(Lang.Text("Update.Task.DownloadLatestStable"), loaders);
+        var loader = new Loading.LoaderCombo<int>(Lang.Text("Update.Task.DownloadLatestStable"), loaders);
         loader.Start();
         loader.WaitForExit();
     }
@@ -264,25 +123,8 @@ public static class UpdateManager
 
     private static void ScheduleBasedOnConfig()
     {
-        switch (Config.Update.UpdateMode)
-        {
-            case LauncherAutoUpdateBehavior.DownloadAndInstall:
-                Common.Log("[Update] 更新设置: 自动下载并安装更新");
-                if (GetVersionStatus() != UpdateEnums.VersionStatus.Latest)
-                    UpdateStart(UpdateEnums.UpdateType.Silent);
-                break;
-            case LauncherAutoUpdateBehavior.DownloadAndAnnounce:
-                Common.Log("[Update] 更新设置: 自动下载并提示更新");
-                UpdateStart(UpdateEnums.UpdateType.DownloadAndPrompt);
-                break;
-            case LauncherAutoUpdateBehavior.AnnounceOnly:
-                Common.Log("[Update] 更新设置: 提示更新");
-                UpdateStart(UpdateEnums.UpdateType.PromptOnly);
-                break;
-            default:
-                Common.Log("[Update] 更新设置: 不自动检查更新");
-                return;
-        }
+        if (Config.Update.UpdateMode == LauncherAutoUpdateBehavior.Disable) return;
+        ForkUpdateService.NotifyInBackground();
     }
 
     /// <summary>
@@ -291,8 +133,10 @@ public static class UpdateManager
     /// <param name="IsUpdate">是否为更新时启动</param>
     public static void ShowCEAnnounce()
     {
-        Launcher.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
-            Lang.Text("Update.CommunityNotice.Title"),
-            Lang.Text("Update.CommunityNotice.Confirm"));
+        if (Config.Update.HideCommunityNotice) return;
+        if (Launcher.MyMsgBox(Lang.Text("Update.CommunityNotice.Body"),
+                Lang.Text("Update.CommunityNotice.Title"),
+                Lang.Text("Update.CommunityNotice.Confirm"), "不再提醒") == 2)
+            Config.Update.HideCommunityNotice = true;
     }
 }
