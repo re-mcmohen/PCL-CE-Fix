@@ -1,0 +1,8 @@
+{
+  "upstream": "1a7653127d578efdb2a9388999a3fdc67d9e49d5",
+  "control": "94e6fe1e2e0752a65d476c6a0cfd3fd7894956fd",
+  "release_tag": "fix-1a7653127d57-94e6fe1e2e07",
+  "repository": "PCL-Community/PCL-CE",
+  "channel": "stable",
+  "upstream_tag": "v2.15.1"
+}
