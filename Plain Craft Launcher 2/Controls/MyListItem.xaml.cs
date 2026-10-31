@@ -255,38 +255,38 @@ public partial class MyListItem : IMyRadio
     }
 
     /// <summary>
-    ///     标签，可以传入 String 和 List(Of String)
+    ///     标签，可以传入 String 和 List(Of String)。传入的值会被当作本地化资源键，
+    ///     按当前语言实时求值，切换语言后自动刷新。<br/>
+    ///     若标签是已经成型的文本（例如版本号），请使用 <see cref="PlainTags" />。
     /// </summary>
     public object Tags
     {
         set
         {
             var list = new List<string>();
-            if (value is string str) list = str.Split("|").ToList();
-            if (value is List<string>) list = (List<string>)value;
-            PanTags.Children.Clear();
-            PanTags.Visibility = list.Any() ? Visibility.Visible : Visibility.Collapsed;
-            foreach (var TagText in list)
+            switch (value)
             {
-                var newTag = new Border
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(17, 0, 0, 0)),
-                    Padding = new Thickness(3d, 1d, 3d, 1d),
-                    CornerRadius = new CornerRadius(3d),
-                    Margin = new Thickness(0d, 0d, 3d, 0d),
-                    SnapsToDevicePixels = true,
-                    UseLayoutRounding = false
-                };
-                var tagTextBlock = new TextBlock
-                {
-                    Text = TagText,
-                    Foreground = new SolidColorBrush(Color.FromRgb(134, 134, 134)),
-                    FontSize = 11d
-                };
-                newTag.Child = tagTextBlock;
-                PanTags.Children.Add(newTag);
+                case string str:
+                    list = [.. str.Split("|")];
+                    break;
+                case List<string> strings:
+                    list = strings;
+                    break;
             }
+
+            TagPanelHelper.FillLocalized(
+                PanTags,
+                list,
+                new SolidColorBrush(Color.FromRgb(134, 134, 134)));
         }
+    }
+
+    public IEnumerable<string>? PlainTags
+    {
+        set => TagPanelHelper.FillPlain(
+            PanTags,
+            value,
+            new SolidColorBrush(Color.FromRgb(134, 134, 134)));
     }
 
     // 副文本

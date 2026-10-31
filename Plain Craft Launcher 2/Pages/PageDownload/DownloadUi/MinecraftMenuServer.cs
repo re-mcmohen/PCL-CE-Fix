@@ -25,8 +25,7 @@ public static partial class DownloadUi
             if (Loading
                 .loaderTaskbar
                 .ToList()
-                .Any(ongoingLoader => (ongoingLoader.name ?? "")
-                    == (Lang.Text("Minecraft.Download.Stage.MinecraftServerDownload", id) ?? "")))
+                .Any(ongoingLoader => ongoingLoader.Identifier == DownloadIdentifier("Server", id)))
             {
                 HintService.Hint(
                     Lang.Text("Minecraft.Download.Error.ServerDownloading"),
@@ -67,7 +66,8 @@ public static partial class DownloadUi
                 Lang.Text("Minecraft.Download.Stage.MinecraftServerDownload", id),
                 loaders)
             {
-                OnStateChanged = LoaderStateChangedHintOnly
+                OnStateChanged = LoaderStateChangedHintOnly,
+                Identifier = DownloadIdentifier("Server", id)
             };
             loader.Start(id);
             Loading.LoaderTaskbarAdd(loader);

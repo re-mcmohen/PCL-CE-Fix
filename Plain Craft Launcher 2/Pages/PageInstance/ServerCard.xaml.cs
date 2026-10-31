@@ -85,16 +85,16 @@ public partial class ServerCard
         {
             _manager.SetSelectedIconByName("loading");
             MotdRenderer.ClearCanvas();
-            ServerPlayer.Text = Lang.Text("Instance.Server.Card.Connecting");
-            ServerMotD.Text = Lang.Text("Instance.Server.Card.ConnectingDots");
+            ServerPlayer.TrySetLocalizedValue("Text", "Instance.Server.Card.Connecting");
+            ServerMotD.TrySetLocalizedValue("Text", "Instance.Server.Card.ConnectingDots");
             ServerMotD.Visibility = Visibility.Visible;
         }
         else if (server.Status == ServerStatus.Offline)
         {
             _manager.SetSelectedIconByName("signal_offline");
             MotdRenderer.ClearCanvas();
-            ServerPlayer.Text = Lang.Text("Instance.Server.Card.Offline");
-            ServerMotD.Text = Lang.Text("Instance.Server.Card.ServerOffline");
+            ServerPlayer.TrySetLocalizedValue("Text", "Instance.Server.Card.Offline");
+            ServerMotD.TrySetLocalizedValue("Text", "Instance.Server.Card.ServerOffline");
             ServerMotD.Visibility = Visibility.Visible;
         }
     }

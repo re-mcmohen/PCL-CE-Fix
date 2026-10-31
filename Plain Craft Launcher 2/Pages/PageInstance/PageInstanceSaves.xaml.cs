@@ -1,4 +1,4 @@
-using System.Collections.Specialized;
+﻿using System.Collections.Specialized;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -51,6 +51,14 @@ public partial class PageInstanceSaves : IRefreshable, IPageView
     {
         _vm.CheckQuickPlay();
         Refresh();
+    }
+
+    protected override void RefreshLocalization()
+    {
+        var savedOffset = PanBack.VerticalOffset;
+        _vm.SetSortMethod(_vm.SortMethod);
+        Reload();
+        Dispatcher.BeginInvoke(new Action(() => PanBack.ScrollToVerticalOffset(savedOffset)));
     }
 
     public static void Refresh()
@@ -177,20 +185,20 @@ public partial class PageInstanceSaves : IRefreshable, IPageView
 
         var btnOpen = new MyIconButton
         {
-            SvgIcon = "lucide/folder-open",
-            ToolTip = Lang.Text("Common.Action.Open")
+            SvgIcon = "lucide/folder-open"
         };
+        btnOpen.TrySetLocalizedValue("ToolTip", "Common.Action.Open");
         btnOpen.Click += (_, _) => Common.OpenExplorer(curFolder);
 
         var btnDelete = new MyIconButton
         {
-            SvgIcon = "lucide/trash-2",
-            ToolTip = Lang.Text("Common.Action.Delete")
+            SvgIcon = "lucide/trash-2"
         };
+        btnDelete.TrySetLocalizedValue("ToolTip", "Common.Action.Delete");
         btnDelete.Click += async (_, _) =>
         {
             worldItem.IsEnabled = false;
-            worldItem.Info = Lang.Text("Instance.Saves.Deleting");
+            LocalizedText.TryBind(worldItem, "Info", () => Lang.Text("Instance.Saves.Deleting"));
             try
             {
                 if (await _vm.DeleteSaveAsync(curFolder))
@@ -212,23 +220,23 @@ public partial class PageInstanceSaves : IRefreshable, IPageView
 
         var btnCopy = new MyIconButton
         {
-            SvgIcon = "lucide/copy",
-            ToolTip = Lang.Text("Common.Action.Copy")
+            SvgIcon = "lucide/copy"
         };
+        btnCopy.TrySetLocalizedValue("ToolTip", "Common.Action.Copy");
         btnCopy.Click += (_, _) => CopySaveToClipboard(curFolder);
 
         var btnInfo = new MyIconButton
         {
-            SvgIcon = "lucide/info",
-            ToolTip = Lang.Text("Instance.Saves.Details")
+            SvgIcon = "lucide/info"
         };
+        btnInfo.TrySetLocalizedValue("ToolTip", "Instance.Saves.Details");
         btnInfo.Click += (_, _) => OpenSaveDetails(curFolder);
 
         var btnLaunch = new MyIconButton
         {
-            SvgIcon = "lucide/play",
-            ToolTip = Lang.Text("Instance.Saves.QuickPlay")
+            SvgIcon = "lucide/play"
         };
+        btnLaunch.TrySetLocalizedValue("ToolTip", "Instance.Saves.QuickPlay");
         btnLaunch.Click += (_, _) => LaunchSave(curFolder);
 
         worldItem.Buttons = _vm.QuickPlayEnabled

@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using PCL.Core.App.Localization;
 
@@ -37,6 +37,8 @@ public partial class PageInstanceSavesInfo : IRefreshable, IPageView
     {
         _ = RefreshInfoAsync();
     }
+
+    protected override void RefreshLocalization() => Refresh();
 
     private void PageInfo_Loaded(object sender, RoutedEventArgs e)
     {
@@ -101,9 +103,9 @@ public partial class PageInstanceSavesInfo : IRefreshable, IPageView
             {
                 SvgIcon = "lucide/external-link",
                 Width = 22d,
-                Height = 22d,
-                ToolTip = Lang.Text("Instance.Saves.Info.Chunkbase.ToolTip")
+                Height = 22d
             };
+            chunkbaseBtn.TrySetLocalizedValue("ToolTip", "Instance.Saves.Info.Chunkbase.ToolTip");
             chunkbaseBtn.Click += (_, _) => PageInstanceSavesInfoViewModel.OpenChunkbase(content, versionName);
             contentStack.Children.Add(chunkbaseBtn);
         }
@@ -151,11 +153,11 @@ public partial class PageInstanceSavesInfo : IRefreshable, IPageView
         {
             Width = 100d,
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = Lang.Text("Instance.Saves.Info.Modify.BeforeSave"),
             SelectedValuePath = "Value",
             DisplayMemberPath = "Display",
             ItemsSource = _vm.AllowCommandsOptions
         };
+        combo.TrySetLocalizedValue("ToolTip", "Instance.Saves.Info.Modify.BeforeSave");
         combo.SelectedValue = allowCommands ? 1 : 0;
         combo.SelectionChanged += async (_, _) =>
         {
@@ -182,22 +184,22 @@ public partial class PageInstanceSavesInfo : IRefreshable, IPageView
         {
             Width = 100d,
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = Lang.Text("Instance.Saves.Info.Modify.BeforeSave"),
             SelectedValuePath = "Value",
             DisplayMemberPath = "Display",
             ItemsSource = _vm.DifficultyOptions
         };
+        combo.TrySetLocalizedValue("ToolTip", "Instance.Saves.Info.Modify.BeforeSave");
         combo.SelectedValue = difficultyValue;
 
         var lockCheckBox = new MyCheckBox
         {
-            Text = Lang.Text("Instance.Saves.Info.LockDifficulty"),
-            ToolTip = Lang.Text("Instance.Saves.Info.LockDifficulty.ToolTip"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10d, 0d, 0d, 0d),
             Checked = isLocked,
             Visibility = isHardcore ? Visibility.Collapsed : Visibility.Visible
         };
+        lockCheckBox.TrySetLocalizedValue("Text", "Instance.Saves.Info.LockDifficulty");
+        lockCheckBox.TrySetLocalizedValue("ToolTip", "Instance.Saves.Info.LockDifficulty.ToolTip");
 
         var panel = new StackPanel
         {

@@ -19,11 +19,13 @@ public static partial class DownloadUi
             Height = 42d,
             Type = MyListItem.CheckType.Clickable,
             Tag = entry,
-            Info = entry["stable"].ToObject<bool>()
-                ? Lang.Text("Download.Version.Type.Stable")
-                : Lang.Text("Download.Version.Type.Preview"),
             Logo = $"{Common.PathImage}Blocks/Fabric.png"
         };
+        newItem.SetLocalizedValue(
+            MyListItem.InfoProperty,
+            entry["stable"].ToObject<bool>()
+                ? "Download.Version.Type.Stable"
+                : "Download.Version.Type.Preview");
         newItem.Click += onClick;
         newItem.ContentHandler = FabricContMenuBuild;
         return newItem;
@@ -31,12 +33,7 @@ public static partial class DownloadUi
 
     private static void FabricContMenuBuild(object sender, EventArgs e)
     {
-        var btnInfo = new MyIconButton
-        {
-            LogoScale = 1.05d,
-            SvgIcon = "lucide/info",
-            ToolTip = Lang.Text("Download.Version.Changelog")
-        };
+        var btnInfo = CreateChangelogButton();
         ToolTipService.SetPlacement(btnInfo, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnInfo, 30d);
         ToolTipService.SetHorizontalOffset(btnInfo, 2d);
@@ -66,10 +63,14 @@ public static partial class DownloadUi
             Height = 42d,
             Type = MyListItem.CheckType.Clickable,
             Tag = entry,
-            Info = entry.StatusDescription
-                + Lang.Text("Download.Version.ReleaseDate", Lang.Date(entry.ReleaseDate, "g")),
             Logo = $"{Common.PathImage}Blocks/Fabric.png"
         };
+        LocalizedText.TryBind(
+            newItem,
+            "Info",
+            () => entry.StatusDescription + Lang.Text(
+                "Download.Version.ReleaseDate",
+                Lang.Date(entry.ReleaseDate, "g")));
         newItem.Click += onClick;
         return newItem;
     }
@@ -90,10 +91,14 @@ public static partial class DownloadUi
             Height = 42d,
             Type = MyListItem.CheckType.Clickable,
             Tag = entry,
-            Info = entry.StatusDescription
-                + Lang.Text("Download.Version.ReleaseDate", Lang.Date(entry.ReleaseDate, "g")),
             Logo = $"{Common.PathImage}Blocks/OptiFabric.png"
         };
+        LocalizedText.TryBind(
+            newItem,
+            "Info",
+            () => entry.StatusDescription + Lang.Text(
+                "Download.Version.ReleaseDate",
+                Lang.Date(entry.ReleaseDate, "g")));
         newItem.Click += onClick;
         return newItem;
     }
@@ -109,11 +114,15 @@ public static partial class DownloadUi
             Height = 42d,
             Type = MyListItem.CheckType.Clickable,
             Tag = entry,
-            Info = entry["stable"].ToObject<bool>()
-                ? Lang.Text("Download.Version.Type.Stable")
-                : Lang.Text("Download.Version.Type.Preview"),
             Logo = $"{Common.PathImage}Blocks/Fabric.png"
         };
+        // 发布状态按当前语言实时求值，切换语言后自动刷新
+        LocalizedText.TryBind(
+            newItem,
+            "Info",
+            () => entry["stable"]?.ToObject<bool>() == true
+                ? Lang.Text("Download.Version.Type.Stable")
+                : Lang.Text("Download.Version.Type.Preview"));
         newItem.Click += onClick;
         return newItem;
     }
@@ -129,10 +138,14 @@ public static partial class DownloadUi
             Height = 42d,
             Type = MyListItem.CheckType.Clickable,
             Tag = entry,
-            Info = entry.StatusDescription
-                + Lang.Text("Download.Version.ReleaseDate", Lang.Date(entry.ReleaseDate, "g")),
             Logo = $"{Common.PathImage}Blocks/Fabric.png"
         };
+        LocalizedText.TryBind(
+            newItem,
+            "Info",
+            () => entry.StatusDescription + Lang.Text(
+                "Download.Version.ReleaseDate",
+                Lang.Date(entry.ReleaseDate, "g")));
         newItem.Click += onClick;
         return newItem;
     }

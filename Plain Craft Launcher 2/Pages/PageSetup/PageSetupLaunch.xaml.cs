@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -92,7 +92,9 @@ public partial class PageSetupLaunch : IPageView
             if (SystemInfo.IsArm64System)
             {
                 CheckAdvanceDisableJLW.Checked = true;
-                CheckAdvanceDisableJLW.ToolTip = Lang.Text("Setup.Launch.Advanced.DisableJlw.Arm64Notice");
+                CheckAdvanceDisableJLW.TrySetLocalizedValue(
+                    "ToolTip",
+                    "Setup.Launch.Advanced.DisableJlw.Arm64Notice");
             }
             else
             {
@@ -585,7 +587,7 @@ public partial class PageSetupLaunch : IPageView
     private void ComboArgumentVisibie_SelectionChanged(object sender, SelectionChangedEventArgs sizeChangedEventArgs)
     {
         ComboChange(sender, sizeChangedEventArgs);
-        if (Animations.AniExitsAnyControl())
+        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
             return;
         if (ComboArgumentVisibie.SelectedIndex == 0)
             if (Launcher.MyMsgBox(
@@ -599,7 +601,7 @@ public partial class PageSetupLaunch : IPageView
     // 实例隔离提示
     private void ComboArgumentIndie_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Animations.AniExitsAnyControl())
+        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
             return;
         Launcher.MyMsgBox(Lang.Text("Setup.Launch.Options.InstanceIsolation.DefaultPolicyHint"));
     }
@@ -631,7 +633,7 @@ public partial class PageSetupLaunch : IPageView
 
     private void ComboAdvanceRenderer_SelectionChanged(MyComboBox sender, object e)
     {
-        if (Animations.AniExitsAnyControl())
+        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
             return;
         if (!States.Hint.Renderer && ComboAdvanceRenderer.SelectedIndex != 0)
         {

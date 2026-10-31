@@ -23,7 +23,7 @@ public static partial class DownloadUi
             if (!target.Contains(@"\"))
                 return;
 
-            if (_IsForgelikeDownloadRunning(displayName))
+            if (_IsForgelikeDownloadRunning(info))
                 return;
 
             var loaders = new List<Loading.LoaderBase>
@@ -42,7 +42,10 @@ public static partial class DownloadUi
                 loaders
             )
             {
-                OnStateChanged = LoaderStateChangedHintOnly
+                OnStateChanged = LoaderStateChangedHintOnly,
+                Identifier = DownloadIdentifier(
+                    "Forgelike",
+                    $"{info.forgeType}:{info.Inherit}:{info.VersionName}")
             };
             loader.Start(info);
             Loading.LoaderTaskbarAdd(loader);
@@ -60,13 +63,14 @@ public static partial class DownloadUi
         }
     }
 
-    private static bool _IsForgelikeDownloadRunning(string displayName)
+    private static bool _IsForgelikeDownloadRunning(GameDownload.DlForgelikeEntry info)
     {
         if (Loading
             .loaderTaskbar
             .ToList()
-            .Any(ongoingLoader => (ongoingLoader.name ?? "")
-                == (Lang.Text("Minecraft.Download.Stage.ForgelikeDownload", displayName) ?? "")))
+            .Any(ongoingLoader => ongoingLoader.Identifier == DownloadIdentifier(
+                "Forgelike",
+                $"{info.forgeType}:{info.Inherit}:{info.VersionName}")))
         {
             HintService.Hint(
                 Lang.Text("Minecraft.Download.Error.InstanceDownloading"),

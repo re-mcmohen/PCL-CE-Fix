@@ -272,6 +272,13 @@ public partial class PageInstanceCompResource : IRefreshable
         }
     }
 
+    protected override void RefreshLocalization()
+    {
+        foreach (var item in modItems.Values)
+            item.Refresh();
+        RefreshBars();
+    }
+
     // 强制刷新
     private void RefreshSelf()
     {
@@ -517,20 +524,32 @@ public partial class PageInstanceCompResource : IRefreshable
                     if (!string.IsNullOrEmpty(CurrentFolderPath))
                     {
                         // 子文件夹为空的提示
-                        _vm.EmptyTitle = Lang.Text("Instance.Resource.EmptyFolder.Title");
-                        _vm.EmptyDescription = Lang.Text("Instance.Resource.EmptyFolder.Description");
+                        TxtEmptyTitle.TrySetLocalizedValue(
+                            "Text",
+                            "Instance.Resource.EmptyFolder.Title");
+                        TxtEmptyDescription.TrySetLocalizedValue(
+                            "Text",
+                            "Instance.Resource.EmptyFolder.Description");
                     }
                     else
                     {
                         // 根目录为空的提示
-                        _vm.EmptyTitle = Lang.Text("Instance.Resource.Empty.Title");
-                        _vm.EmptyDescription = Lang.Text("Instance.Resource.Empty.Description");
+                        TxtEmptyTitle.TrySetLocalizedValue(
+                            "Text",
+                            "Instance.Resource.Empty.Title");
+                        TxtEmptyDescription.TrySetLocalizedValue(
+                            "Text",
+                            "Instance.Resource.Empty.Description");
                     }
                 }
                 else
                 {
-                    _vm.EmptyTitle = Lang.Text("Instance.Resource.Empty.Title");
-                    _vm.EmptyDescription = Lang.Text("Instance.Resource.Empty.DescriptionWithDownload");
+                    TxtEmptyTitle.TrySetLocalizedValue(
+                        "Text",
+                        "Instance.Resource.Empty.Title");
+                    TxtEmptyDescription.TrySetLocalizedValue(
+                        "Text",
+                        "Instance.Resource.Empty.DescriptionWithDownload");
                 }
 
                 // 如果当前在子文件夹中，显示返回上一级按钮
@@ -646,20 +665,20 @@ public partial class PageInstanceCompResource : IRefreshable
 
         // 图标按钮
         var btnOpen = new MyIconButton { LogoScale = 1.05d, SvgIcon = "lucide/folder-open", Tag = sender };
-        btnOpen.ToolTip = Lang.Text("Instance.Saves.OpenFileLocation");
+        btnOpen.TrySetLocalizedValue("ToolTip", "Instance.Saves.OpenFileLocation");
         ToolTipService.SetPlacement(btnOpen, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnOpen, 30d);
         ToolTipService.SetHorizontalOffset(btnOpen, 2d);
         btnOpen.Click += (ss, ee) => Open_Click((MyIconButton)ss, ee);
         var btnCont = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/info", Tag = sender };
-        btnCont.ToolTip = Lang.Text("Instance.Saves.Detail");
+        btnCont.TrySetLocalizedValue("ToolTip", "Instance.Saves.Detail");
         ToolTipService.SetPlacement(btnCont, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnCont, 30d);
         ToolTipService.SetHorizontalOffset(btnCont, 2d);
         btnCont.Click += Info_Click;
         sender.MouseRightButtonUp += Info_Click;
         var btnDelete = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/trash-2", Tag = sender };
-        btnDelete.ToolTip = Lang.Text("Common.Action.Delete");
+        btnDelete.TrySetLocalizedValue("ToolTip", "Common.Action.Delete");
         ToolTipService.SetPlacement(btnDelete, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnDelete, 30d);
         ToolTipService.SetHorizontalOffset(btnDelete, 2d);
@@ -679,7 +698,13 @@ public partial class PageInstanceCompResource : IRefreshable
                     : "lucide/circle-check",
                 Tag = sender
             };
-            btnED.ToolTip = sender.Entry.State == LocalComp.LocalCompFile.LocalFileStatus.Fine ? Lang.Text("Instance.Resource.Disable") : Lang.Text("Instance.Resource.Enable");
+            // 启用状态与界面语言都可能变化，按需求值
+            LocalizedText.TryBind(
+                btnED,
+                "ToolTip",
+                () => sender.Entry.State == LocalComp.LocalCompFile.LocalFileStatus.Fine
+                    ? Lang.Text("Instance.Resource.Disable")
+                    : Lang.Text("Instance.Resource.Enable"));
             ToolTipService.SetPlacement(btnED, PlacementMode.Center);
             ToolTipService.SetVerticalOffset(btnED, 30d);
             ToolTipService.SetHorizontalOffset(btnED, 2d);
@@ -769,14 +794,31 @@ public partial class PageInstanceCompResource : IRefreshable
                 }
             });
             // 显示
-            _vm.FilterAllText = IsSearching ? Lang.Text("Instance.Resource.Filter.SearchResult") : Lang.Text("Instance.Resource.Filter.AllWithCount", anyCount);
-            _vm.FilterCanUpdateText = Lang.Text("Instance.Resource.Filter.UpdatableWithCount", updateCount);
+            LocalizedText.TryBind(
+                BtnFilterAll,
+                "Text",
+                () => IsSearching
+                    ? Lang.Text("Instance.Resource.Filter.SearchResult")
+                    : Lang.Text("Instance.Resource.Filter.AllWithCount", anyCount));
+            LocalizedText.TryBind(
+                BtnFilterCanUpdate,
+                "Text",
+                () => Lang.Text("Instance.Resource.Filter.UpdatableWithCount", updateCount));
             _vm.ShowFilterCanUpdate = Filter == FilterType.CanUpdate || updateCount > 0;
-            _vm.FilterEnabledText = Lang.Text("Instance.Resource.Filter.EnabledWithCount", enabledCount);
+            LocalizedText.TryBind(
+                BtnFilterEnabled,
+                "Text",
+                () => Lang.Text("Instance.Resource.Filter.EnabledWithCount", enabledCount));
             _vm.ShowFilterEnabled = Filter == FilterType.Enabled || (enabledCount > 0 && enabledCount < anyCount);
-            _vm.FilterDisabledText = Lang.Text("Instance.Resource.Filter.DisabledWithCount", disabledCount);
+            LocalizedText.TryBind(
+                BtnFilterDisabled,
+                "Text",
+                () => Lang.Text("Instance.Resource.Filter.DisabledWithCount", disabledCount));
             _vm.ShowFilterDisabled = Filter == FilterType.Disabled || disabledCount > 0;
-            _vm.FilterErrorText = Lang.Text("Instance.Resource.Filter.ErrorWithCount", unavalialeCount);
+            LocalizedText.TryBind(
+                BtnFilterError,
+                "Text",
+                () => Lang.Text("Instance.Resource.Filter.ErrorWithCount", unavalialeCount));
             _vm.ShowFilterError = Filter == FilterType.Unavailable || unavalialeCount > 0;
             // 查找重复项目
             var duplicateItems = await Task.Run(() => itemSource.GroupBy(m =>
@@ -785,7 +827,12 @@ public partial class PageInstanceCompResource : IRefreshable
 
                 return m.Comp.Id;
             }).Where(g => g.Count() > 1 && g.First().Comp is not null).SelectMany(g => g).ToList());
-            _vm.FilterDuplicateText = Lang.Text("Instance.Resource.Filter.DuplicateWithCount", duplicateItems.Count);
+            LocalizedText.TryBind(
+                BtnFilterDuplicate,
+                "Text",
+                () => Lang.Text(
+                    "Instance.Resource.Filter.DuplicateWithCount",
+                    duplicateItems.Count));
             _vm.ShowFilterDuplicate = Filter == FilterType.Duplicate || duplicateItems.Any();
 
             // 返回按钮显示控制（在子文件夹中时显示）
@@ -802,7 +849,10 @@ public partial class PageInstanceCompResource : IRefreshable
             var newCount = selectedMods.Count;
             var selected = newCount > 0;
             if (selected)
-                _vm.SelectedText = Lang.Text("Instance.Resource.SelectedCount", newCount); // 取消所有选择时不更新数字
+                LocalizedText.TryBind(
+                    LabSelect,
+                    "Text",
+                    () => Lang.Text("Instance.Resource.SelectedCount", newCount)); // 取消所有选择时不更新数字
             // 按钮可用性
             if (selected)
             {
@@ -1649,7 +1699,10 @@ public partial class PageInstanceCompResource : IRefreshable
     private void SetSortMethod(SortMethod target)
     {
         currentSortMethod = target;
-        _vm.SortText = Lang.Text("Instance.Resource.Sort.Text", GetSortName(target));
+        LocalizedText.TryBind(
+            BtnSort,
+            "Text",
+            () => Lang.Text("Instance.Resource.Sort.Text", GetSortName(target)));
         // RefreshUI()
         DoSort();
     }
@@ -2144,6 +2197,7 @@ public partial class PageInstanceCompResource : IRefreshable
             modList = modList.ToList(); // 防止刷新影响迭代器
             var fileList = new List<DownloadFile>();
             var fileCopyList = new Dictionary<string, string>();
+            var tempFolder = Launcher.RequestTaskTempFolder();
             foreach (var Entry in modList)
             {
                 var file = Entry.UpdateFile;
@@ -2186,8 +2240,8 @@ public partial class PageInstanceCompResource : IRefreshable
                 }
 
                 // 添加到下载列表
-                var tempAddress = Common.pathTemp + @"DownloadedComp\" +
-                                  Entry.FileName.Replace(currentReplaceName, newestReplaceName);
+                var tempAddress = Path.Combine(tempFolder,
+                    Entry.FileName.Replace(currentReplaceName, newestReplaceName));
                 var realAddress = Common.GetPathFromFullPath(Entry.path) +
                                   Entry.FileName.Replace(currentReplaceName, newestReplaceName);
                 fileList.Add(file.ToNetFile(tempAddress, Comp.DownloadReason.Update));
@@ -2297,9 +2351,8 @@ public partial class PageInstanceCompResource : IRefreshable
                 {
                     try
                     {
-                        foreach (var TempFile in fileCopyList.Keys)
-                            if (File.Exists(TempFile))
-                                File.Delete(TempFile);
+                        if (Directory.Exists(tempFolder))
+                            Directory.Delete(tempFolder, true);
                     }
                     catch (Exception ex)
                     {
@@ -3040,7 +3093,9 @@ public partial class PageInstanceCompResource : IRefreshable
                     searchSource.Add(new Common.SearchSource(Entry.Comp.TranslatedName, 1d));
                 if ((Entry.Comp.Description ?? "") != (Entry.Description ?? ""))
                     searchSource.Add(new Common.SearchSource(Entry.Comp.Description, 0.4d));
-                searchSource.Add(new Common.SearchSource(string.Join("", Entry.Comp.Tags), 0.2d));
+                searchSource.Add(new Common.SearchSource(
+                    string.Join("", Comp.GetLocalizedTags(Entry.Comp.Tags)),
+                    0.2d));
             }
 
             queryList.Add(new Common.SearchEntry<LocalComp.LocalCompFile>

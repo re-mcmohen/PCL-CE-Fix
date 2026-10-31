@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,7 +27,7 @@ public partial class PageDownloadInstall
         InitializeComponent();
         DataContext = _vm;
         PanScroll = PanBack;
-        LoadMinecraft.Text = Lang.Text("Download.Version.LoadingList");
+        LoadMinecraft.TrySetLocalizedValue("Text", "Download.Version.LoadingList");
         WeakLanguageChanged.Add(this, OnLanguageChanged);
         BtnBack.Click += (_, _) => ExitSelectPage();
         CardOptiFine.Swap += (_, _) => ReloadSelected();
@@ -970,6 +970,8 @@ public partial class PageDownloadInstall
                 MinecraftSelected(item, null);
                 break;
             }
+
+            mcVersionWaitingForSelect = null;
         }
         catch (Exception ex)
         {
@@ -1015,9 +1017,8 @@ public partial class PageDownloadInstall
 
     private void _OnLanguageChanged() => Common.RunInUi(() =>
     {
-        LoadMinecraft.Text = Lang.Text("Download.Version.LoadingList");
-        if (GameDownload.dlClientListLoader.output.Value?["versions"] is JsonArray versions)
-            _RebuildVersionCards(versions);
+        LoadMinecraft.TrySetLocalizedValue("Text", "Download.Version.LoadingList");
+        ReloadSelected();
     });
 
     private void _AddLatestVersionCard(Dictionary<McVersionCategory, List<JsonObject>> dict)
@@ -1030,10 +1031,10 @@ public partial class PageDownloadInstall
         if (latestRelease is not null)
         {
             var release = (JsonObject)latestRelease.DeepClone();
-            release["lore"] = Lang.Text(
-                "Download.Version.Latest.Release",
-                Lang.Date(McVersionClassifier.GetReleaseTime(release), "g")
-            );
+            release["lore"] = "Download.Version.Latest.Release";
+            release["loreArgs"] =
+                new JsonArray(McVersionClassifier.GetReleaseTime(release).ToString("O"));
+            release["loreArgsType"] = "date";
             latestVersions.Add(release);
         }
 
@@ -1042,10 +1043,10 @@ public partial class PageDownloadInstall
                 McVersionClassifier.GetReleaseTime(latestSnapshot)))
         {
             var snapshot = (JsonObject)latestSnapshot.DeepClone();
-            snapshot["lore"] = Lang.Text(
-                "Download.Version.Latest.Development",
-                Lang.Date(McVersionClassifier.GetReleaseTime(snapshot), "g")
-            );
+            snapshot["lore"] = "Download.Version.Latest.Development";
+            snapshot["loreArgs"] =
+                new JsonArray(McVersionClassifier.GetReleaseTime(snapshot).ToString("O"));
+            snapshot["loreArgsType"] = "date";
             latestVersions.Add(snapshot);
         }
 
@@ -1054,9 +1055,9 @@ public partial class PageDownloadInstall
 
         var cardInfo = new MyCard
         {
-            Title = Lang.Text("Download.Version.Latest.Title"),
             Margin = new Thickness(0d, 15d, 0d, 15d)
         };
+        LocalizedText.TryBind(cardInfo, "Title", () => Lang.Text("Download.Version.Latest.Title"));
 
         var panInfo = _CreateVersionStack(latestVersions);
         MyCard.StackInstall(ref panInfo, _StackInstall);
@@ -1077,9 +1078,14 @@ public partial class PageDownloadInstall
 
             var card = new MyCard
             {
-                Title = $"{McVersionClassifier.GetCategoryDisplayName(category)} ({versions.Count})",
                 Margin = new Thickness(0d, 0d, 0d, 15d)
             };
+            var categoryKey = McVersionClassifier.GetCategoryKey(category);
+            var categoryCount = versions.Count;
+            LocalizedText.TryBind(
+                card,
+                "Title",
+                () => $"{Lang.Text(categoryKey)} ({categoryCount})");
 
             var stack = _CreateVersionStack(versions);
 
@@ -1945,9 +1951,7 @@ public partial class PageDownloadInstall
     {
         try
         {
-            if (supportVersions.Contains(minecraftVersion)) return true;
-
-            return false;
+            return Comp.ContainsGameVersion(supportVersions, minecraftVersion);
         }
         catch (Exception ex)
         {
@@ -2075,7 +2079,7 @@ public partial class PageDownloadInstall
         {
             if (_vanillaName is null)
                 return false;
-            return modFile.GameVersions.Contains(_vanillaName);
+            return Comp.ContainsGameVersion(modFile.GameVersions, _vanillaName);
         }
         catch (Exception ex)
         {

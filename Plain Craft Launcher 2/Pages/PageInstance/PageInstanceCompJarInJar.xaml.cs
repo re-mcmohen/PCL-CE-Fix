@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,6 +30,15 @@ public partial class PageInstanceCompJarInJar
             RefreshList();
         };
         Loaded += (_, _) => RefreshList();
+    }
+
+    protected override void RefreshLocalization()
+    {
+        if (LocalComp.CompResourceListLoader.output is null)
+            return;
+        var savedOffset = PanBack.VerticalOffset;
+        RefreshList();
+        Dispatcher.BeginInvoke(new Action(() => PanBack.ScrollToVerticalOffset(savedOffset)));
     }
 
     public PageInstanceCompJarInJarViewModel ViewModel => _vm;

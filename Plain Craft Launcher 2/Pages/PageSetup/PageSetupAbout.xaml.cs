@@ -1,6 +1,7 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Input;
+using PCL.Core.App.Localization;
 
 namespace PCL;
 
@@ -11,10 +12,23 @@ public partial class PageSetupAbout : IPageView
     public PageSetupAbout()
     {
         InitializeComponent();
+        BindAboutInfo();
         Loaded += PageAbout_Loaded;
     }
 
     public PageSetupAboutViewModel ViewModel => _vm;
+
+    private void BindAboutInfo()
+    {
+        LocalizedText.TryBind(
+            ItemAboutPcl,
+            "Info",
+            () => Lang.Text("Setup.About.Version.Info")
+                .Replace("%VERSION%", Common.VersionBaseName)
+                .Replace("%VERSIONCODE%", Common.VersionCode.ToString())
+                .Replace("%BRANCH%", Common.VersionBranchName)
+                .Replace("%COMMIT_HASH%", Common.CommitHashShort));
+    }
 
     public void OnNavigatedTo(object? parameter) => Refresh();
 

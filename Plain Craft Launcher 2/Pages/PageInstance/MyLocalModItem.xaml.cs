@@ -51,7 +51,11 @@ public partial class MyLocalCompItem
             if (Entry.CanUpdate)
             {
                 BtnUpdate.Visibility = Visibility.Visible;
-                BtnUpdate.ToolTip = $"{GetUpdateCompareDescription()}\r\n{Lang.Text("Instance.Resource.Item.UpdateToolTip")}";
+                LocalizedText.TryBind(
+                    BtnUpdate,
+                    "ToolTip",
+                    () =>
+                        $"{GetUpdateCompareDescription()}\r\n{Lang.Text("Instance.Resource.Item.UpdateToolTip")}");
             }
             else
             {
@@ -195,7 +199,7 @@ public partial class MyLocalCompItem
             // 标签
             if (Entry.IsFolder)
                 // 为文件夹添加标签
-                Tags = new List<string> { Lang.Text("Instance.Resource.Item.FolderTag") };
+                Tags = ["Instance.Resource.Item.FolderTag"];
             else if (Entry.Comp is not null) Tags = Entry.Comp.Tags;
         }));
     }
@@ -511,33 +515,14 @@ public partial class MyLocalCompItem
     // Tag
     public List<string> Tags
     {
-        set
-        {
-            PanTags.Children.Clear();
-            PanTags.Visibility = value.Any() ? Visibility.Visible : Visibility.Collapsed;
-            foreach (var TagText in value)
-            {
-                var newTag = new Border
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(12, 0, 0, 0)),
-                    Padding = new Thickness(3d, 1d, 3d, 1d),
-                    CornerRadius = new CornerRadius(3d),
-                    Margin = new Thickness(0d, 0d, 3d, 0d),
-                    SnapsToDevicePixels = true,
-                    UseLayoutRounding = false
-                };
-                var tagTextBlock = new TextBlock
-                {
-                    Text = TagText,
-                    Foreground = new SolidColorBrush(ThemeManager.IsDarkMode
-                        ? Color.FromArgb(88, 255, 255, 255)
-                        : Color.FromArgb(88, 136, 136, 136)),
-                    FontSize = 11d
-                };
-                newTag.Child = tagTextBlock;
-                PanTags.Children.Add(newTag);
-            }
-        }
+        set => TagPanelHelper.FillLocalized(
+            PanTags,
+            value,
+            new SolidColorBrush(
+                ThemeManager.IsDarkMode
+                    ? Color.FromArgb(88, 255, 255, 255)
+                    : Color.FromArgb(88, 136, 136, 136)),
+            12);
     }
 
     // 相关联的 Mod

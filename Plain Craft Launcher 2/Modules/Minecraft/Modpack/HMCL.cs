@@ -33,7 +33,8 @@ public static partial class Modpack
         var loaders = _CreateModpackInstallLoaderList(installLoaders, mergeLoaders);
 
         var loaderName = Lang.Text("Minecraft.Download.Modpack.Task.HmclInstall", instanceName);
-        if (loaderTaskbar.Any(l => (l.name ?? "") == (loaderName ?? "")))
+        var loaderIdentifier = $"Modpack:Hmcl:{instanceName}";
+        if (loaderTaskbar.Any(l => l.Identifier == loaderIdentifier))
         {
             HintService.Hint(Lang.Text("Minecraft.Download.Modpack.Installing"), HintType.Error);
             throw new Common.CancelledException();
@@ -41,7 +42,8 @@ public static partial class Modpack
 
         var loader = new LoaderCombo<string>(loaderName, loaders)
         {
-            OnStateChanged = DownloadUi.McInstallState
+            OnStateChanged = DownloadUi.McInstallState,
+            Identifier = loaderIdentifier
         };
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);

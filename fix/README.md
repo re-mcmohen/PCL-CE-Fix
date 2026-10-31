@@ -28,3 +28,5 @@ dotnet publish 'Plain Craft Launcher 2/Plain Craft Launcher 2.csproj' -c Release
 `PCL.Core/` 等目录使用根目录 Apache 2.0 许可证；`Plain Craft Launcher 2/` 使用其目录内的《PCL 分发有限许可》及使用指南。请阅读并保留全部原始许可文本，不能将整个项目视为 Apache 2.0。
 
 原项目：[PCL Community Edition](https://github.com/PCL-Community/PCL-CE) · [PCL](https://github.com/Meloong-Git/PCL)。
+
+`fix/overlay/` 保存由 Fix 独立维护的更新页面及更新管理器，`apply.py` 会显式覆盖对应上游文件。修改这些源码时须同步更新覆盖文件。其余源码通过严格匹配的补丁应用；文件改名或接口不兼容仍需人工适配，并由构建验证。

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -96,6 +96,7 @@ public partial class FormMain
         MsgBoxWrapper.OnShow += Launcher.MsgBoxWrapper_OnShow;
         // 注册 Hint 事件
         HintWrapper.OnShow += HintService.HintWrapper_OnShow;
+        WeakLanguageChanged.Add(this, OnLanguageChanged);
         // 加载 UI
         InitializeComponent();
         Opacity = 0d;
@@ -1526,6 +1527,16 @@ public partial class FormMain
         LabTitleInner.Text = PageNameGet(type);
     }
 
+    private static void OnLanguageChanged(FormMain form)
+    {
+        Common.RunInUi(() =>
+        {
+            // 次级页面标题栏由代码设置，语言变更后需要重新求值
+            if (!string.IsNullOrEmpty(form.PageNameGet(form.pageCurrent)))
+                form.PageNameRefresh();
+        });
+    }
+
     /// <summary>
     ///     刷新次级页面的名称。
     /// </summary>
@@ -1590,12 +1601,6 @@ public partial class FormMain
 
     public class PageStackData
     {
-        /// <summary>
-        /// <list type="bullet">
-        ///   <item><description>CompDetail: (CompProject, ExpandedTitles, TargetVersion, TargetLoader, ResourceType)</description></item>
-        ///   <item><description>VersionSaves: SavePath</description></item>
-        /// </list>
-        /// </summary>
         public (
             Comp.CompProject CompProject,
             List<string> ExpandedTitles,

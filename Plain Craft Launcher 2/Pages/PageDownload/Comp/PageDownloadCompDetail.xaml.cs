@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.ObjectModel;
 using System.Diagnostics.Eventing.Reader;
 using System.IO;
@@ -55,6 +55,27 @@ public partial class PageDownloadCompDetail
         Animations.AniEndControl();
     }
 
+    protected override void RefreshLocalization()
+    {
+        if (_compFileLoader is not { State: Common.LoadState.Finished })
+            return;
+
+        var savedOffset = PanBack.VerticalOffset;
+        var expandedKeys = new List<string>();
+        foreach (MyCard card in PanResults.Children)
+            if (card.Tag is string cardKey && !card.IsSwapped)
+                expandedKeys.Add(cardKey);
+
+        if (Launcher.frmMain.pageCurrent.additional is { } additional)
+            Launcher.frmMain.pageCurrent.additional = additional with
+            {
+                ExpandedTitles = expandedKeys
+            };
+
+        UpdateFilterResult();
+        Dispatcher.BeginInvoke(new Action(() => PanBack.ScrollToVerticalOffset(savedOffset)));
+    }
+
     // 整合包安装
     public async void Install_Click(MyListItem sender, EventArgs e)
     {
@@ -91,7 +112,7 @@ public partial class PageDownloadCompDetail
                 { ProgressWeight = 10d, block = true });
             loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Download.Comp.Detail.PrepareModpackInstall"),
                 _ => Modpack.ModpackInstall(target, instanceName,
-                    System.IO.File.Exists(logoFileAddress) ? logoFileAddress : null, file.ProjectId,
+                    File.Exists(logoFileAddress) ? logoFileAddress : null, file.ProjectId,
                     true)) { ProgressWeight = 0.1d });
 
             // 启动
@@ -169,8 +190,8 @@ public partial class PageDownloadCompDetail
                     return false;
                 if (!version.IsLoaded)
                     version.Load();
-                if (file.GameVersions.Any(v => v.Contains(".")) && !file.GameVersions.Any(v =>
-                        v.Contains(".") && (v ?? "") == (version.Info.VanillaName ?? "")))
+                if (file.GameVersions.Any(v => v.Contains(".")) &&
+                    !Comp.ContainsGameVersion(file.GameVersions, version.Info.VanillaName))
                     return false;
                 // 加载器
                 if (!allowedLoaders.Any())
@@ -241,7 +262,7 @@ public partial class PageDownloadCompDetail
             loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Download.Comp.Detail.InstallWorld"),
                 _ => Common.ExtractFile(target, targetPath, Encoding.UTF8)) { ProgressWeight = 0.1d, block = true });
             loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Download.Comp.Detail.CleanCache"),
-                _ => System.IO.File.Delete(target)));
+                _ => File.Delete(target)));
 
             // 启动
             var loader = new Loading.LoaderCombo<int>(loaderName, loaders)
@@ -319,7 +340,8 @@ public partial class PageDownloadCompDetail
                         // 只对 Mod 和数据包进行版本检测
                         if (file.Type == Comp.CompType.Mod || file.Type == Comp.CompType.DataPack)
                             if (file.GameVersions.Any(v => v.Contains(".")) &&
-                                !file.GameVersions.Any(v => v.Contains(".") && v == version.Info.VanillaName))
+                                !Comp.ContainsGameVersion(file.GameVersions,
+                                    version.Info.VanillaName))
                                 return false;
 
                         // 加载器判定
@@ -436,7 +458,7 @@ public partial class PageDownloadCompDetail
                             }
 
                             var mcVersion = targetInstance?.Info?.VanillaName
-                                            ?? file.GameVersions.FirstOrDefault(version => version.Contains("."))
+                                            ?? Comp.FirstGameVersion(file.GameVersions)
                                             ?? string.Empty;
                             var targetLoaders = new List<Comp.CompLoaderType>();
                             if (targetInstance is not null)
@@ -726,7 +748,7 @@ public partial class PageDownloadCompDetail
                 var errorMessage = "";
                 if (_compFileLoader.Error is not null)
                     errorMessage = _compFileLoader.Error.Message;
-                if (errorMessage.Contains(Lang.Text("Common.Error.InvalidJson")))
+                if (_compFileLoader.Error is InvalidJsonException)
                 {
                     Common.Log("[Comp] 下载的文件 Json 列表损坏，已自动重试", Common.LogLevel.Debug);
                     PageLoaderRestart();
@@ -734,6 +756,63 @@ public partial class PageDownloadCompDetail
 
                 break;
             }
+        }
+    }
+
+    // 结果 UI 化
+    private class CardSorter : IComparer<string>
+    {
+        public readonly string topmost = "";
+
+        public CardSorter(string topmost = "")
+        {
+            this.topmost = topmost ?? "";
+        }
+
+        /// <summary>
+        ///     特殊版本分组的排序权重。数值越小越靠前，未列出的按名称排序。
+        /// </summary>
+        private static int GetSpecialRank(string key)
+        {
+            return key switch
+            {
+                VersionGroupOther => 3,
+                VersionGroupSnapshot => 1,
+                VersionGroupOld => 2,
+                _ => 0
+            };
+        }
+
+        public int Compare(string x, string y)
+        {
+            // 相同
+            if ((x ?? "") == (y ?? ""))
+                return 0;
+            // 置顶
+            if ((x ?? "") == (topmost ?? ""))
+                return -1;
+            if ((y ?? "") == (topmost ?? ""))
+                return 1;
+            // 特殊版本
+            var isXSpecial = !x.Contains(".");
+            var isYSpecial = !y.Contains(".");
+            if (isXSpecial && isYSpecial)
+            {
+                var rankCompare = GetSpecialRank(x).CompareTo(GetSpecialRank(y));
+                return rankCompare != 0 ? rankCompare : string.CompareOrdinal(x, y);
+            }
+
+            if (isXSpecial)
+                return 1;
+            if (isYSpecial)
+                return -1;
+            // 比较版本号
+            var versionCodeSort = -McVersionComparer.CompareVersion(x.Replace(x.BeforeFirst(" ") + " ", ""),
+                y.Replace(y.BeforeFirst(" ") + " ", ""));
+            if (versionCodeSort != 0)
+                return versionCodeSort;
+            // 比较全部
+            return -McVersionComparer.CompareVersion(x, y);
         }
     }
 
@@ -813,34 +892,54 @@ public partial class PageDownloadCompDetail
             {
                 var instanceTextBlock = new TextBlock
                 {
-                    Text = Lang.Text("Download.Comp.Detail.InstanceFilter"),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(2d, 0d, 0d, 0d)
                 };
+                instanceTextBlock.TrySetLocalizedValue(
+                    "Text",
+                    "Download.Comp.Detail.InstanceFilter");
                 PanInstanceFilterLabel.Children.Add(instanceTextBlock);
                 var modLoaderTextBlock = new TextBlock
                 {
-                    Text = Lang.Text("Download.Comp.Detail.LoaderFilter"),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(2d, 0d, 0d, 0d)
                 };
+                modLoaderTextBlock.TrySetLocalizedValue(
+                    "Text",
+                    "Download.Comp.Detail.LoaderFilter");
                 PanModLoaderFilter.Children.Add(modLoaderTextBlock);
             }
 
-            instanceFilters.Insert(0, Lang.Text("Common.Option.All"));
-            modLoaderFilters.Insert(0, Lang.Text("Common.Option.All"));
+            instanceFilters.Insert(0, FilterAll);
+            modLoaderFilters.Insert(0, FilterAll);
             // 转化为按钮
             foreach (var version in instanceFilters)
             {
                 var newButton = new MyRadioButton
                 {
-                    Text = version, Margin = new Thickness(2d, 0d, 2d, 4d),
-                    ColorType = MyRadioButton.ColorState.Highlight
+                    Margin = new Thickness(2d, 0d, 2d, 4d),
+                    ColorType = MyRadioButton.ColorState.Highlight,
+                    Tag = version,
+                    LabText =
+                    {
+                        Margin = new Thickness(-2, 0d, 10d, 0d)
+                    }
                 };
-                newButton.LabText.Margin = new Thickness(-2, 0d, 10d, 0d);
+                if (version == FilterAll)
+                    newButton.SetLocalizedValue(MyRadioButton.TextProperty, "Common.Option.All");
+                else
+                {
+                    var versionKey = version;
+                    LocalizedText.TryBind(
+                        newButton,
+                        "Text",
+                        () => GetVersionGroupDisplayName(versionKey));
+                }
                 newButton.Check += (sender, raiseByMouse) =>
                 {
-                    _instanceFilter = sender.Text == Lang.Text("Common.Option.All") ? null : sender.Text;
+                    _instanceFilter = (string)sender.Tag == FilterAll
+                        ? null
+                        : (string)sender.Tag;
                     UpdateFilterResult();
                 };
                 PanInstanceFilter.Children.Add(newButton);
@@ -851,14 +950,23 @@ public partial class PageDownloadCompDetail
                 {
                     var newButton = new MyRadioButton
                     {
-                        Text = loader,
                         Margin = new Thickness(2d, 0d, 2d, 0d),
-                        ColorType = MyRadioButton.ColorState.Highlight
+                        ColorType = MyRadioButton.ColorState.Highlight,
+                        Tag = loader,
+                        LabText =
+                        {
+                            Margin = new Thickness(-2, 0d, 10d, 0d)
+                        }
                     };
-                    newButton.LabText.Margin = new Thickness(-2, 0d, 10d, 0d);
+                    if (loader == FilterAll)
+                        newButton.SetLocalizedValue(MyRadioButton.TextProperty, "Common.Option.All");
+                    else
+                        newButton.Text = loader;
                     newButton.Check += (sender, raiseByMouse) =>
                     {
-                        _modLoaderFilter = sender.Text == Lang.Text("Common.Option.All") ? null : sender.Text;
+                        _modLoaderFilter = (string)sender.Tag == FilterAll
+                            ? null
+                            : (string)sender.Tag;
                         UpdateFilterResult();
                     };
                     PanModLoaderFilter.Children.Add(newButton);
@@ -869,13 +977,14 @@ public partial class PageDownloadCompDetail
             MyRadioButton modLoaderToCheck = null;
             if (!string.IsNullOrEmpty(_targetInstance))
             {
-                var targetFile = results.FirstOrDefault(v => v.GameVersions.Contains(_targetInstance));
+                var targetFile = results.FirstOrDefault(v =>
+                    Comp.ContainsGameVersion(v.GameVersions, _targetInstance));
                 if (targetFile is not null)
                 {
                     var targetGroup = GetGroupedVersionName(_targetInstance, groupedDrop, groupedOld);
                     foreach (MyRadioButton button in PanInstanceFilter.Children)
                     {
-                        if ((button.Text ?? "") != (targetGroup ?? ""))
+                        if ((button.Tag as string ?? "") != (targetGroup ?? ""))
                             continue;
                         instanceToCheck = button;
                         break;
@@ -894,7 +1003,7 @@ public partial class PageDownloadCompDetail
                             : PanInstanceFilter.Children.Cast<UIElement>();
                         foreach (MyRadioButton button in (IEnumerable)children)
                         {
-                            if ((button.Text ?? "") != (_targetLoader.ToString() ?? ""))
+                            if ((button.Tag as string ?? "") != (_targetLoader.ToString() ?? ""))
                                 continue;
                             modLoaderToCheck = button;
                             break;
@@ -926,7 +1035,7 @@ public partial class PageDownloadCompDetail
         // 1. 预处理基础变量
         var targetVersionText = _targetLoader != Comp.CompLoaderType.Any ? _targetLoader + " " : "";
         var targetCardName = !string.IsNullOrEmpty(_targetInstance) || _targetLoader != Comp.CompLoaderType.Any
-            ? Lang.Text("Download.Comp.Detail.SelectedVersion", targetVersionText, _targetInstance)
+            ? VersionGroupSelected + targetVersionText + "\0" + (_targetInstance ?? "")
             : "";
 
         // 使用 HashSet 提高查询性能 O(1)
@@ -937,9 +1046,8 @@ public partial class PageDownloadCompDetail
         var hasMultipleLoaders = _project.ModLoaders.Count > 1;
 
         // 2. 核心数据归类 (使用 Dictionary 配合 HashSet 去重)
-        var dict = new SortedDictionary<string, List<Comp.CompFile>>(
-            new PageDownloadCompDetailViewModel.CardSorter(targetCardName));
-        dict.Add(Lang.Text("Download.Comp.Detail.VersionGroup.Other"), new List<Comp.CompFile>());
+        var dict = new SortedDictionary<string, List<Comp.CompFile>>(new CardSorter(targetCardName));
+        dict.Add(VersionGroupOther, []);
 
         // 用于记录每个卡片内已存在的 version，防止 Contains(version) 的 O(n) 消耗
         var versionDuplicateChecker = new Dictionary<string, HashSet<Comp.CompFile>>();
@@ -995,7 +1103,8 @@ public partial class PageDownloadCompDetail
                                     GetGroupedVersionName(_targetInstance, groupedDrop, groupedOld)
                                         .StartsWithF(_instanceFilter);
 
-                if (isMatchFilter && version.GameVersions.Contains(_targetInstance))
+                if (isMatchFilter &&
+                    Comp.ContainsGameVersion(version.GameVersions, _targetInstance))
                     if (_targetLoader == Comp.CompLoaderType.Any || version.ModLoaders.Contains(_targetLoader))
                         // 再次检查 version 是否符合筛选器（针对该文件的所有游戏版本）
                         if (_instanceFilter is null || version.GameVersions.Any(v =>
@@ -1021,9 +1130,14 @@ public partial class PageDownloadCompDetail
                 // 创建卡片组件
                 var newCard = new MyCard
                 {
-                    Title = pair.Key,
-                    Margin = new Thickness(0d, 0d, 0d, 15d)
+                    Margin = new Thickness(0d, 0d, 0d, 15d),
+                    Tag = pair.Key
                 };
+                var groupKey = pair.Key;
+                LocalizedText.TryBind(
+                    newCard,
+                    "Title",
+                    () => GetVersionGroupDisplayName(groupKey));
 
                 // 闭包引用：避免在 Sub 内做高耗时操作
                 var files = pair.Value;
@@ -1082,20 +1196,25 @@ public partial class PageDownloadCompDetail
 
                 PanResults.Children.Add(newCard);
 
-                // 展开逻辑
-                if ((currentKey ?? "") == (targetCardName ?? "") || additionalTitles.Contains(newCard.Title))
+                if ((currentKey ?? "") == (targetCardName ?? "") ||
+                    additionalTitles.Contains(groupKey))
                     newCard.StackInstall();
                 else
                     newCard.IsSwapped = true;
 
                 // 特殊提示
-                if (currentKey == Lang.Text("Download.Comp.Detail.VersionGroup.Other"))
-                    newStack.Children.Add(new MyHint
+                if (currentKey == VersionGroupOther)
+                {
+                    var delayHint = new MyHint
                     {
-                        Text = Lang.Text("Download.Comp.Detail.VersionRecognitionDelayHint"),
                         Theme = MyHint.Themes.Yellow,
                         Margin = new Thickness(5d, 0d, 0d, 8d)
-                    });
+                    };
+                    delayHint.TrySetLocalizedValue(
+                        "Text",
+                        "Download.Comp.Detail.VersionRecognitionDelayHint");
+                    newStack.Children.Add(delayHint);
+                }
             }
 
             // 单卡片自动展开
@@ -1128,14 +1247,55 @@ public partial class PageDownloadCompDetail
         if (checker[key].Add(version)) dict[key].Add(version);
     }
 
+    private const string FilterAll = "\0filter.all";
+
+    private const string VersionGroupOther = "\0group.other";
+
+    private const string VersionGroupSnapshot = "\0group.snapshot";
+
+    private const string VersionGroupOld = "\0group.old";
+
+    private const string VersionGroupSelected = "\0group.selected";
+
+    internal static string GetVersionGroupTitleForLog(string groupKey)
+    {
+        return (groupKey ?? "")
+            .Replace("\0", "/", StringComparison.Ordinal);
+    }
+
+    private static string GetVersionGroupDisplayName(string groupKey)
+    {
+        if (groupKey is not null &&
+            groupKey.StartsWith(VersionGroupSelected, StringComparison.Ordinal))
+        {
+            var parts = groupKey[VersionGroupSelected.Length..].Split('\0');
+            var loaderPrefix = parts.Length > 0 ? parts[0] : "";
+            var instanceName = parts.Length > 1 ? parts[1] : "";
+            return Lang.Text("Download.Comp.Detail.SelectedVersion", loaderPrefix, instanceName);
+        }
+
+        return groupKey switch
+        {
+            VersionGroupOther => Lang.Text("Download.Comp.Detail.VersionGroup.Other"),
+            VersionGroupSnapshot => Lang.Text("Download.Comp.Detail.VersionGroup.Snapshot"),
+            VersionGroupOld => Lang.Text("Download.Comp.Detail.VersionGroup.Old"),
+            _ => Comp.FormatGameVersionInKey(groupKey)
+        };
+    }
+
     private string GetGroupedVersionName(string name, bool groupedByDrop, bool foldOld)
     {
         if (name is null)
-            return Lang.Text("Download.Comp.Detail.VersionGroup.Other");
+            return VersionGroupOther;
+        name = Comp.NormalizeGameVersion(name);
+        if (name.Length == 0 || name == Comp.CompFile.UnknownGameVersion)
+            return VersionGroupOther;
+        if (name == Comp.CompFile.AncientGameVersion)
+            return foldOld ? VersionGroupOld : name;
         if (name.Contains('w'))
-            return Lang.Text("Download.Comp.Detail.VersionGroup.Snapshot");
+            return VersionGroupSnapshot;
         if (foldOld && McInstanceInfo.VersionToDrop(name, true) < 120)
-            return Lang.Text("Download.Comp.Detail.VersionGroup.Old");
+            return VersionGroupOld;
         if (groupedByDrop)
         {
             var drop = McInstanceInfo.VersionToDrop(name, true);

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -181,6 +181,14 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
 
     #region UI 化
 
+    protected override void RefreshLocalization()
+    {
+        _vm.SetSortMethod(_vm.SortMethod);
+        foreach (var item in datapackItems.Values)
+            item.Refresh();
+        RefreshBars();
+    }
+
     private void LoadUIFromLoaderOutput()
     {
         try
@@ -255,14 +263,14 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
 
         // 图标按钮
         var btnOpen = new MyIconButton { LogoScale = 1.05d, SvgIcon = "lucide/folder-open", Tag = sender };
-        btnOpen.ToolTip = Lang.Text("Instance.Saves.OpenFileLocation");
+        btnOpen.TrySetLocalizedValue("ToolTip", "Instance.Saves.OpenFileLocation");
         ToolTipService.SetPlacement(btnOpen, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnOpen, 30d);
         ToolTipService.SetHorizontalOffset(btnOpen, 2d);
         btnOpen.Click += (sender, e) => Open_Click((MyIconButton)sender, e);
 
         var btnCont = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/info", Tag = sender };
-        btnCont.ToolTip = Lang.Text("Instance.Saves.Detail");
+        btnCont.TrySetLocalizedValue("ToolTip", "Instance.Saves.Detail");
         ToolTipService.SetPlacement(btnCont, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnCont, 30d);
         ToolTipService.SetHorizontalOffset(btnCont, 2d);
@@ -270,7 +278,7 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
         sender.MouseRightButtonUp += Info_Click;
 
         var btnDelete = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/trash-2", Tag = sender };
-        btnDelete.ToolTip = Lang.Text("Common.Action.Delete");
+        btnDelete.TrySetLocalizedValue("ToolTip", "Common.Action.Delete");
         ToolTipService.SetPlacement(btnDelete, PlacementMode.Center);
         ToolTipService.SetVerticalOffset(btnDelete, 30d);
         ToolTipService.SetHorizontalOffset(btnDelete, 2d);
@@ -279,7 +287,7 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
         if (sender.Entry.State == LocalComp.LocalCompFile.LocalFileStatus.Fine)
         {
             var btnDisable = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/circle-minus", Tag = sender };
-            btnDisable.ToolTip = Lang.Text("Instance.Resource.Disable");
+            btnDisable.TrySetLocalizedValue("ToolTip", "Instance.Resource.Disable");
             ToolTipService.SetPlacement(btnDisable, PlacementMode.Center);
             ToolTipService.SetVerticalOffset(btnDisable, 30d);
             ToolTipService.SetHorizontalOffset(btnDisable, 2d);
@@ -289,7 +297,7 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
         else if (sender.Entry.State == LocalComp.LocalCompFile.LocalFileStatus.Disabled)
         {
             var btnEnable = new MyIconButton { LogoScale = 1d, SvgIcon = "lucide/circle-check", Tag = sender };
-            btnEnable.ToolTip = Lang.Text("Instance.Resource.Enable");
+            btnEnable.TrySetLocalizedValue("ToolTip", "Instance.Resource.Enable");
             ToolTipService.SetPlacement(btnEnable, PlacementMode.Center);
             ToolTipService.SetVerticalOffset(btnEnable, 30d);
             ToolTipService.SetHorizontalOffset(btnEnable, 2d);
@@ -1115,7 +1123,9 @@ public partial class PageInstanceSavesDatapack : IRefreshable, IPageView
                             searchSource.Add(new Common.SearchSource(Entry.Comp.TranslatedName, 1d));
                         if ((Entry.Comp.Description ?? "") != (Entry.Description ?? ""))
                             searchSource.Add(new Common.SearchSource(Entry.Comp.Description, 0.4d));
-                        searchSource.Add(new Common.SearchSource(string.Join("", Entry.Comp.Tags), 0.2d));
+                        searchSource.Add(new Common.SearchSource(
+                            string.Join("", Comp.GetLocalizedTags(Entry.Comp.Tags)),
+                            0.2d));
                     }
 
                     queryList.Add(new Common.SearchEntry<LocalComp.LocalCompFile>

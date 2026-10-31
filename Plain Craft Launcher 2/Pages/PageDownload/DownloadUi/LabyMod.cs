@@ -24,8 +24,8 @@ public static partial class DownloadUi
             if (Loading
                 .loaderTaskbar
                 .ToList()
-                .Any(ongoingLoader => (ongoingLoader.name ?? "")
-                    == (Lang.Text("Minecraft.Download.Stage.LabyModInstallerDownload") ?? "")))
+                .Any(ongoingLoader =>
+                    ongoingLoader.Identifier == DownloadIdentifier("LabyMod", "Installer")))
             {
                 HintService.Hint(
                     Lang.Text("Minecraft.Download.Error.InstanceDownloading"),
@@ -51,7 +51,8 @@ public static partial class DownloadUi
                 Lang.Text("Minecraft.Download.Stage.LabyModInstallerDownload"),
                 loaders)
             {
-                OnStateChanged = LoaderStateChangedHintOnly
+                OnStateChanged = LoaderStateChangedHintOnly,
+                Identifier = DownloadIdentifier("LabyMod", "Installer")
             };
             loader.Start();
             Loading.LoaderTaskbarAdd(loader);
@@ -86,8 +87,8 @@ public static partial class DownloadUi
             if (Loading
                 .loaderTaskbar
                 .ToList()
-                .Any(ongoingLoader => (ongoingLoader.name ?? "")
-                    == (Lang.Text("Minecraft.Download.Stage.LabyModInstallerDownload") ?? "")))
+                .Any(ongoingLoader =>
+                    ongoingLoader.Identifier == DownloadIdentifier("LabyMod", "Installer")))
             {
                 HintService.Hint(
                     Lang.Text("Minecraft.Download.Error.InstanceDownloading"),
@@ -113,7 +114,8 @@ public static partial class DownloadUi
                 Lang.Text("Minecraft.Download.Stage.LabyModInstallerDownload"),
                 loaders)
             {
-                OnStateChanged = LoaderStateChangedHintOnly
+                OnStateChanged = LoaderStateChangedHintOnly,
+                Identifier = DownloadIdentifier("LabyMod", "Installer")
             };
             loader.Start();
             Loading.LoaderTaskbarAdd(loader);

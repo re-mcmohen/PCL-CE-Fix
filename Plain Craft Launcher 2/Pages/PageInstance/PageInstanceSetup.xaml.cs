@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -126,8 +126,10 @@ public partial class PageInstanceSetup : IPageView
             TextArgumentInfo.Text = Config.Instance.TypeInfo[PageInstanceLeft.McInstance.PathInstance];
             var _unused = PageInstanceLeft.McInstance.PathIndie; // 触发自动判定
             ComboArgumentIndieV2.SelectedIndex = Config.Instance.IndieV2[PageInstanceLeft.McInstance.PathInstance] ? 0 : 1;
+            CheckArgumentTitleEmpty.Visibility = TextArgumentTitle.Text.Length > 0 ? Visibility.Collapsed : Visibility.Visible;
             _vm.RefreshTitleEmptyHint(TextArgumentTitle.Text);
             _vm.RefreshTitleHint(CheckArgumentTitleEmpty.Checked == true);
+            BindArgumentTitleHint();
             RefreshJavaComboBox();
 
             // 游戏内存
@@ -169,7 +171,9 @@ public partial class PageInstanceSetup : IPageView
             {
                 CheckAdvanceDisableJLW.Checked = true;
                 _vm.DisableJlwEnabled = false;
-                CheckAdvanceDisableJLW.ToolTip = Lang.Text("Setup.Launch.Advanced.DisableJlw.Arm64ToolTip");
+                CheckAdvanceDisableJLW.TrySetLocalizedValue(
+                    "ToolTip",
+                    "Setup.Launch.Advanced.DisableJlw.Arm64ToolTip");
             }
             else
             {
@@ -600,18 +604,16 @@ public partial class PageInstanceSetup : IPageView
         ComboArgumentJava.Items.Clear();
 
         // 选项 0: 跟随全局设置
-        ComboArgumentJava.Items.Add(new MyComboBoxItem
-        {
-            Content = Lang.Text("Instance.Setup.FollowGlobal"),
-            Tag = new UseGlobalPreference()
-        });
+        var globalItem = new MyComboBoxItem { Tag = new UseGlobalPreference() };
+        globalItem.SetLocalizedValue(ContentControl.ContentProperty, "Instance.Setup.FollowGlobal");
+        ComboArgumentJava.Items.Add(globalItem);
 
         // 选项 1: 自动选择
-        ComboArgumentJava.Items.Add(new MyComboBoxItem
-        {
-            Content = Lang.Text("Instance.Setup.Options.Java.AutoSelect"),
-            Tag = new AutoSelect() // Nothing 表示自动选择
-        });
+        var autoItem = new MyComboBoxItem { Tag = new AutoSelect() }; // Tag 表示自动选择
+        autoItem.SetLocalizedValue(
+            ContentControl.ContentProperty,
+            "Instance.Setup.Options.Java.AutoSelect");
+        ComboArgumentJava.Items.Add(autoItem);
 
         // 选项 2: 相对路径选项
         MyComboBoxItem relativePathItem;
@@ -623,31 +625,54 @@ public partial class PageInstanceSetup : IPageView
 
             if (Files.IsPathWithinDirectory(absPath, Basics.ExecutableDirectory) && javaEntry is not null &&
                 javaEntry.IsEnabled)
+            {
                 // 有效路径：显示具体 Java 信息
                 relativePathItem = new MyComboBoxItem
                 {
-                    Content = Lang.Text("Instance.Setup.Options.Java.SelectRelative.WithJava", javaEntry.ToString()),
-                    Tag = new UseRelativePath(relPref.RelativePath),
-                    ToolTip = Lang.Text("Instance.Setup.Options.Java.RelativePathToolTip", relPref.RelativePath, absPath)
+                    Tag = new UseRelativePath(relPref.RelativePath)
                 };
+                var javaDisplay = javaEntry.ToString();
+                LocalizedText.TryBind(
+                    relativePathItem,
+                    "Content",
+                    () => Lang.Text("Instance.Setup.Options.Java.SelectRelative.WithJava",
+                        javaDisplay));
+                LocalizedText.TryBind(
+                    relativePathItem,
+                    "ToolTip",
+                    () => Lang.Text(
+                        "Instance.Setup.Options.Java.RelativePathToolTip",
+                        relPref.RelativePath, absPath));
+            }
             else
+            {
                 // 无效路径：提示用户重新选择
                 relativePathItem = new MyComboBoxItem
                 {
-                    Content = Lang.Text("Instance.Setup.Options.Java.SelectRelative.Invalid"),
-                    Tag = new UseRelativePath(relPref.RelativePath),
-                    ToolTip = Lang.Text("Instance.Setup.Options.Java.InvalidPathToolTip", absPath)
+                    Tag = new UseRelativePath(relPref.RelativePath)
                 };
+                relativePathItem.TrySetLocalizedValue(
+                    "Content",
+                    "Instance.Setup.Options.Java.SelectRelative.Invalid");
+                LocalizedText.TryBind(
+                    relativePathItem,
+                    "ToolTip",
+                    () => Lang.Text(
+                        "Instance.Setup.Options.Java.InvalidPathToolTip",
+                        absPath));
+            }
         }
         else
         {
             // 未配置相对路径：使用默认模板
             relativePathItem = new MyComboBoxItem
             {
-                Content = Lang.Text("Instance.Setup.Options.Java.SelectRelative"),
-                Tag = new UseRelativePath(@"jre\bin\java.exe"),
-                ToolTip = Lang.Text("Instance.Setup.Options.Java.SelectRelativeToolTip")
+                Tag = new UseRelativePath(@"jre\bin\java.exe")
             };
+            relativePathItem.TrySetLocalizedValue("Content",
+                "Instance.Setup.Options.Java.SelectRelative");
+            relativePathItem.TrySetLocalizedValue("ToolTip",
+                "Instance.Setup.Options.Java.SelectRelativeToolTip");
         }
 
         ComboArgumentJava.Items.Add(relativePathItem);
@@ -661,10 +686,17 @@ public partial class PageInstanceSetup : IPageView
                 var item = new MyComboBoxItem
                 {
                     Content = curJava.ToString(),
-                    ToolTip =
-                        Lang.Text("Instance.Setup.Options.Java.Details.ToolTip", curJava.Installation.JavaExePath, curJava.Installation.Version, curJava.Source),
                     Tag = curJava
                 };
+                var javaExePath = curJava.Installation.JavaExePath;
+                var javaVersion = curJava.Installation.Version;
+                var javaSource = curJava.Source;
+                LocalizedText.TryBind(
+                    item,
+                    "ToolTip",
+                    () => Lang.Text(
+                        "Instance.Setup.Options.Java.Details.ToolTip",
+                        javaExePath, javaVersion, javaSource));
                 ToolTipService.SetInitialShowDelay(item, 300);
                 ToolTipService.SetBetweenShowDelay(item, 100);
                 ComboArgumentJava.Items.Add(item);
@@ -679,11 +711,11 @@ public partial class PageInstanceSetup : IPageView
                 Common.LogLevel.Feedback,
                 userSummary: Lang.Text("Instance.Setup.Error.OperationFailed"));
             ComboArgumentJava.Items.Clear();
-            ComboArgumentJava.Items.Add(new MyComboBoxItem
-            {
-                Content = Lang.Text("Instance.Setup.Options.Java.LoadFailed"),
-                IsEnabled = false
-            });
+            var loadFailedItem = new MyComboBoxItem { IsEnabled = false };
+            loadFailedItem.SetLocalizedValue(
+                ContentControl.ContentProperty,
+                "Instance.Setup.Options.Java.LoadFailed");
+            ComboArgumentJava.Items.Add(loadFailedItem);
             ComboArgumentJava.SelectedIndex = 0;
             RefreshRam(true);
             return;
@@ -734,12 +766,13 @@ public partial class PageInstanceSetup : IPageView
         if (!JavaRuntime.Javas.ExistAnyJava() && ComboArgumentJava.Items.Count <= 3)
         {
             ComboArgumentJava.Items.Clear();
-            var noJavaItem = new MyComboBoxItem
-            {
-                Content = Lang.Text("Instance.Setup.Options.Java.NoRuntime"),
-                ToolTip = Lang.Text("Instance.Setup.Options.Java.NoRuntime.ToolTip"),
-                IsEnabled = false
-            };
+            var noJavaItem = new MyComboBoxItem { IsEnabled = false };
+            noJavaItem.SetLocalizedValue(
+                ContentControl.ContentProperty,
+                "Instance.Setup.Options.Java.NoRuntime");
+            noJavaItem.SetLocalizedValue(
+                ToolTipProperty,
+                "Instance.Setup.Options.Java.NoRuntime.ToolTip");
             ComboArgumentJava.Items.Add(noJavaItem);
             ComboArgumentJava.SelectedItem = noJavaItem;
         }
@@ -757,10 +790,7 @@ public partial class PageInstanceSetup : IPageView
             return;
         }
 
-        var firstItem = ComboArgumentJava.Items[0] as MyComboBoxItem;
-        if (firstItem is not null &&
-        ((string)firstItem.Content == Lang.Text("Instance.Setup.Options.Java.NoRuntime") ||
-        (string)firstItem.Content == Lang.Text("Instance.Setup.Options.Java.LoadFailed")))
+        if (ComboArgumentJava.Items[0] is MyComboBoxItem { IsEnabled: false })
             ComboArgumentJava.IsDropDownOpen = false;
     }
 
@@ -772,9 +802,10 @@ public partial class PageInstanceSetup : IPageView
         if (ComboArgumentJava.SelectedItem is null)
             return;
 
-        var selectedItem = ComboArgumentJava.SelectedItem as MyComboBoxItem;
-        if (selectedItem is null || (selectedItem.Tag is null &&
-        (string)selectedItem.Content != Lang.Text("Instance.Setup.Options.Java.AutoSelect")))
+        if (ComboArgumentJava.SelectedItem is not MyComboBoxItem
+            {
+                Tag: null or AutoSelect
+            } selectedItem)
             return;
 
         JavaPreference preference = default;
@@ -842,7 +873,7 @@ public partial class PageInstanceSetup : IPageView
         if (ctl is not null) ctl.IsEnabled = false;
         try
         {
-            if (Animations.AniExitsAnyControl())
+            if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
                 return;
             if (isReverting)
                 return;
@@ -871,10 +902,21 @@ public partial class PageInstanceSetup : IPageView
         }
     }
 
+    private void BindArgumentTitleHint()
+    {
+        LocalizedText.TryBind(
+            TextArgumentTitle,
+            "HintText",
+            () => CheckArgumentTitleEmpty.Checked == true
+                ? Lang.Text("Common.Option.Default")
+                : Lang.Text("Instance.Setup.FollowGlobal"));
+    }
+
     // 游戏窗口
     private void CheckArgumentTitleEmpty_Change(object sender, bool e)
     {
         _vm.RefreshTitleHint(CheckArgumentTitleEmpty.Checked == true);
+        BindArgumentTitleHint();
         CheckBoxChange(sender,e);
     }
 
@@ -900,7 +942,7 @@ public partial class PageInstanceSetup : IPageView
         if (ctl is not null) ctl.IsEnabled = false;
         try
         {
-            if (Animations.AniExitsAnyControl())
+            if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
                 return;
 
             var args = e; // 转换事件参数

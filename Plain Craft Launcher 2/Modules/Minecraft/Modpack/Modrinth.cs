@@ -66,7 +66,8 @@ public static partial class Modpack
             resourceId);
 
         var loaderName = Lang.Text("Minecraft.Download.Modpack.Task.ModrinthInstall", instanceName);
-        if (loaderTaskbar.Any(l => (l.name ?? "") == (loaderName ?? "")))
+        var loaderIdentifier = $"Modpack:Modrinth:{instanceName}";
+        if (loaderTaskbar.Any(l => l.Identifier == loaderIdentifier))
         {
             HintService.Hint(Lang.Text("Minecraft.Download.Modpack.Installing"), HintType.Error);
             throw new Common.CancelledException();
@@ -74,7 +75,8 @@ public static partial class Modpack
 
         var loader = new LoaderCombo<string>(loaderName, loaders)
         {
-            OnStateChanged = DownloadUi.McInstallState
+            OnStateChanged = DownloadUi.McInstallState,
+            Identifier = loaderIdentifier
         };
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);

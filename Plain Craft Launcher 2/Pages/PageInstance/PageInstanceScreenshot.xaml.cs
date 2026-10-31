@@ -208,31 +208,31 @@ public partial class PageInstanceScreenshot : IRefreshable
                 var btnOpen = new MyIconTextButton
                 {
                     Name = "BtnOpen",
-                    Text = Lang.Text("Common.Action.Open"),
                     LogoScale = 0.8d,
                     SvgIcon = "lucide/folder-open",
                     Tag = i
                 };
+                btnOpen.TrySetLocalizedValue("Text", "Common.Action.Open");
                 btnOpen.Click += (s, ev) => BtnOpen_Click((MyIconTextButton)s, ev);
                 stackPanel.Children.Add(btnOpen);
                 var btnDelete = new MyIconTextButton
                 {
                     Name = "BtnDelete",
-                    Text = Lang.Text("Common.Action.Delete"),
                     LogoScale = 0.8d,
                     SvgIcon = "lucide/trash-2",
                     Tag = i
                 };
+                btnDelete.TrySetLocalizedValue("Text", "Common.Action.Delete");
                 btnDelete.Click += (s, ev) => BtnDelete_Click((MyIconTextButton)s, ev);
                 stackPanel.Children.Add(btnDelete);
                 var btnCopy = new MyIconTextButton
                 {
                     Name = "BtnCopy",
-                    Text = Lang.Text("Common.Action.Copy"),
                     LogoScale = 0.8d,
                     SvgIcon = "lucide/copy",
                     Tag = i
                 };
+                btnCopy.TrySetLocalizedValue("Text", "Common.Action.Copy");
                 btnCopy.Click += (s, ev) => BtnCopy_Click((MyIconTextButton)s, ev);
                 stackPanel.Children.Add(btnCopy);
                 PanList.Children.Add(myCard);

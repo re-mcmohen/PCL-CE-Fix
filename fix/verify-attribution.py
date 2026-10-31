@@ -12,7 +12,8 @@ def verify(root: Path) -> None:
         raise RuntimeError("About author card is missing")
     authors = card.findall(".//pcl:MyListItem", ns)
     if not authors or authors[0].get("Grid.Row") != "0" or \
-            authors[0].get("Title") != "{DynamicResource Setup.About.OriginalAuthor.Name}":
+            authors[0].get("Title") not in {"{DynamicResource Setup.About.OriginalAuthor.Name}",
+                                         "{loc:Loc Setup.About.OriginalAuthor.Name}"}:
         raise RuntimeError("The original author must remain first in About")
     sponsor = any(button.get("Grid.Row") == "0" and
                   button.get("{clr-namespace:PCL}CustomEventService.EventData") == "https://ifdian.net/a/LTCat"

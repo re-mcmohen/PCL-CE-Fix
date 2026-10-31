@@ -21,6 +21,8 @@ public class ExportOption : DependencyObject
         nameof(Description), typeof(string), typeof(ExportOption)
     );
 
+    public Func<string> DescriptionFactory { get; set; }
+
     public string Title
     {
         get => (string)GetValue(TitleProperty);
@@ -29,7 +31,9 @@ public class ExportOption : DependencyObject
 
     public string Description
     {
-        get => (string)GetValue(DescriptionProperty);
+        get => DescriptionFactory is not null
+            ? DescriptionFactory()
+            : (string)GetValue(DescriptionProperty);
         set => SetValue(DescriptionProperty, value);
     }
 
@@ -105,7 +109,8 @@ public partial class PageInstanceExport : IRefreshable, IPageView
         _vm.RefreshHeader(PageInstanceLeft.McInstance);
         CheckAdvancedInclude.Checked = false;
         CheckAdvancedModrinth.Checked = false;
-        GetExportOption(CheckOptionsBasic).Description = PageInstanceLeft.McInstance.GetDefaultDescription();
+        GetExportOption(CheckOptionsBasic).DescriptionFactory =
+            () => PageInstanceLeft.McInstance.GetDefaultDescription();
         ResetConfigOverrides();
         ReloadAllSubOptions();
         RefreshAllOptionsUI();
@@ -269,7 +274,8 @@ public partial class PageInstanceExport : IRefreshable, IPageView
                                 Tag = new ExportOption
                                 {
                                     Title = $"{shaderConfig.Name}", DefaultChecked = true,
-                                    Description = Lang.Text("Instance.Export.Config.ShaderConfigSuffix"),
+                                    DescriptionFactory =
+                                        () => Lang.Text("Instance.Export.Config.ShaderConfigSuffix"),
                                     Rules = Common.EscapeLikePattern($"{Folder}/{shaderConfig.Name}")
                                 }
                             });
@@ -292,8 +298,12 @@ public partial class PageInstanceExport : IRefreshable, IPageView
                         }
                     };
                     if (ReferenceEquals(panel, PanOptionsSaves))
-                        GetExportOption(newCheckBox).Description =
-                            Lang.Date(SubFolder.LastWriteTime, "g");
+                    {
+                        var lastWriteTime = SubFolder.LastWriteTime;
+                        GetExportOption(newCheckBox).DescriptionFactory =
+                            () => Lang.Date(lastWriteTime, "g");
+                    }
+
                     panel.Children.Add(newCheckBox);
                     if (Folder == "shaderpacks") // 处理文件夹形式光影包的配置文件
                     {
@@ -306,7 +316,8 @@ public partial class PageInstanceExport : IRefreshable, IPageView
                                 Tag = new ExportOption
                                 {
                                     Title = $"{shaderConfig.Name}", DefaultChecked = true,
-                                    Description = Lang.Text("Instance.Export.Config.ShaderConfigSuffix"),
+                                    DescriptionFactory =
+                                        () => Lang.Text("Instance.Export.Config.ShaderConfigSuffix"),
                                     Rules = Common.EscapeLikePattern($"{Folder}/{shaderConfig.Name}")
                                 }
                             });
@@ -318,6 +329,29 @@ public partial class PageInstanceExport : IRefreshable, IPageView
     #endregion
 
     #region 选项
+
+    protected override void RefreshLocalization()
+    {
+        var savedOffset = PanBack.VerticalOffset;
+        RefreshOptionTexts();
+        Dispatcher.BeginInvoke(new Action(() => PanBack.ScrollToVerticalOffset(savedOffset)));
+    }
+
+    private void RefreshOptionTexts()
+    {
+        foreach (var checkBox in GetAllOptions(true))
+        {
+            var targetOption = GetExportOption(checkBox);
+            checkBox.Inlines.Clear();
+            checkBox.Inlines.Add(new Run(targetOption.Title));
+            if (!string.IsNullOrEmpty(targetOption.Description))
+                checkBox.Inlines.Add(
+                    new Run($"   {targetOption.Description}")
+                    {
+                        Foreground = ThemeManager.colorGray5
+                    });
+        }
+    }
 
     /// <summary>
     ///     重新确认是否应该显示每个选项，并将 ExportOption 同步到 UI。
@@ -824,9 +858,10 @@ public partial class PageInstanceExport : IRefreshable, IPageView
 
         // 重复任务检查
         var loaderName = Lang.Text("Instance.Export.ExportTask.Prefix") + packName;
+        var loaderIdentifier = "Export:" + packName;
         foreach (var OngoingLoader in Loading.loaderTaskbar)
         {
-            if ((OngoingLoader.name ?? "") != (loaderName ?? ""))
+            if (OngoingLoader.Identifier != loaderIdentifier)
                 continue;
             Launcher.frmMain.PageChange(FormMain.PageType.TaskManager);
             return;
@@ -1178,16 +1213,46 @@ public partial class PageInstanceExport : IRefreshable, IPageView
                 loader.Progress = 0.2d;
                 // 导出最终 JSON 文件
                 var dependencies = new JsonObject { { "minecraft", mcInstance.Info.VanillaName } };
-                if (mcInstance.Info.HasForge)
-                    dependencies.Add("forge", mcInstance.Info.Forge);
-                if (mcInstance.Info.HasFabric)
-                    dependencies.Add("fabric-loader", mcInstance.Info.Fabric);
-                if (mcInstance.Info.HasNeoForge)
-                    dependencies.Add("neoforge", mcInstance.Info.NeoForge);
+                switch (mcInstance.Info.HasForge)
+                {
+                    case true when !string.IsNullOrEmpty(mcInstance.Info.Forge):
+                        dependencies.Add("forge", mcInstance.Info.Forge);
+                        break;
+                    case true:
+                        Common.Log(
+                            "[Export] Forge 版本未知，已跳过 modrinth.index.json 的 Forge 依赖项",
+                            Common.LogLevel.Debug);
+                        break;
+                }
+
+                switch (mcInstance.Info.HasFabric)
+                {
+                    case true when !string.IsNullOrEmpty(mcInstance.Info.Fabric):
+                        dependencies.Add("fabric-loader", mcInstance.Info.Fabric);
+                        break;
+                    case true:
+                        Common.Log(
+                            "[Export] Fabric 版本未知，已跳过 modrinth.index.json 的 Fabric 依赖项",
+                            Common.LogLevel.Debug);
+                        break;
+                }
+
+                switch (mcInstance.Info.HasNeoForge)
+                {
+                    case true when !string.IsNullOrEmpty(mcInstance.Info.NeoForge):
+                        dependencies.Add("neoforge", mcInstance.Info.NeoForge);
+                        break;
+                    case true:
+                        Common.Log(
+                            "[Export] NeoForge 版本未知，已跳过 modrinth.index.json 的 NeoForge 依赖项",
+                            Common.LogLevel.Debug);
+                        break;
+                }
                 var resultJson = new JsonObject
                 {
                     { "game", "minecraft" }, { "formatVersion", 1 }, { "versionId", packVersion }, { "name", packName },
-                    { "summary", mcInstance.Desc }, { "files", files }, { "dependencies", dependencies }
+                    { "summary", mcInstance.CustomDesc ?? "" }, { "files", files },
+                    { "dependencies", dependencies }
                 };
                 File.WriteAllText(Path.Combine(cacheFolder, "modpack", "modrinth.index.json"),
                     resultJson.ToJsonString(new JsonSerializerOptions(JsonCompat.SerializerOptions) { WriteIndented = true }));
@@ -1224,7 +1289,10 @@ public partial class PageInstanceExport : IRefreshable, IPageView
 
         // 启动
         var mainLoader = new Loading.LoaderCombo<string>(loaderName, loaders)
-            { OnStateChanged = DownloadUi.LoaderStateChangedHintOnly };
+        {
+            OnStateChanged = DownloadUi.LoaderStateChangedHintOnly,
+            Identifier = loaderIdentifier
+        };
         mainLoader.Start();
         Loading.LoaderTaskbarAdd(mainLoader);
         Launcher.frmMain.BtnExtraDownload.ShowRefresh();

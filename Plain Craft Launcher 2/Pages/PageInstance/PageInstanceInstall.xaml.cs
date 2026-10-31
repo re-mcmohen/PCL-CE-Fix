@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +10,7 @@ using PCL.Core.App;
 using PCL.Core.App.Localization;
 using PCL.Core.UI;
 using PCL.Core.Utils;
+using Path = System.IO.Path;
 
 namespace PCL;
 
@@ -35,7 +36,22 @@ public partial class PageInstanceInstall
         Loaded += (a, b) => Init();
         InitializeComponent();
         DataContext = _vm;
-        LoadMinecraft.Text = Lang.Text("Download.Version.LoadingList");
+        LoadMinecraft.TrySetLocalizedValue("Text", "Download.Version.LoadingList");
+        WeakLanguageChanged.Add(this, OnLanguageChanged);
+    }
+
+    private static void OnLanguageChanged(PageInstanceInstall page)
+    {
+        page._OnLanguageChanged();
+    }
+
+    private void _OnLanguageChanged()
+    {
+        Common.RunInUi(() =>
+        {
+            LoadMinecraft.TrySetLocalizedValue("Text", "Download.Version.LoadingList");
+            ReloadSelected();
+        });
     }
 
     private void LoaderInit()
@@ -131,7 +147,7 @@ public partial class PageInstanceInstall
         // 删除 LabyMod Neo 文件
         if ((PageInstanceLeft.McInstance.PathIndie ?? "") != (PageInstanceLeft.McInstance.PathInstance ?? "") &&
             PageInstanceLeft.McInstance.Info.HasLabyMod)
-            Directory.Delete(System.IO.Path.Combine(PageInstanceLeft.McInstance.PathIndie, "labymod-neo"), true);
+            Directory.Delete(Path.Combine(PageInstanceLeft.McInstance.PathIndie, "labymod-neo"), true);
         // 备份实例核心文件
         Common.CopyFile(PageInstanceLeft.McInstance.PathInstance + PageInstanceLeft.McInstance.Name + ".json",
             PageInstanceLeft.McInstance.PathInstance + @"PCLInstallBackups\" + PageInstanceLeft.McInstance.Name + ".json");
@@ -197,7 +213,9 @@ public partial class PageInstanceInstall
             case MyLoading.MyLoadingState.Error:
             {
                 var message = ((Loading.LoaderBase)loader.State).Error.Message;
-                return message == Lang.Text("Download.Install.State.NoVersion") ? Lang.Text("Download.Install.State.NoVersion") : Lang.Text("Download.Install.State.GetFailed", message);
+                return message == Lang.Text("Download.Install.State.NoVersion")
+                    ? Lang.Text("Download.Install.State.NoVersion")
+                    : Lang.Text("Download.Install.State.GetFailed", message);
             }
             case MyLoading.MyLoadingState.Unloaded:
             {
@@ -1054,59 +1072,83 @@ public partial class PageInstanceInstall
         ClearSelected();
         _vm.CanStartInstall = true;
         var currentInstance = PageInstanceLeft.McInstance.Info;
-        _vanillaName = currentInstance.VanillaName;
+        var vanillaName = currentInstance.VanillaName ?? string.Empty;
+        _vanillaName = vanillaName;
         if (currentInstance.HasLiteLoader)
-            selectedLiteLoader = new GameDownload.DlLiteLoaderListEntry { Inherit = currentInstance.VanillaName };
-        if (currentInstance.HasOptiFine)
+            selectedLiteLoader = new GameDownload.DlLiteLoaderListEntry { Inherit = vanillaName };
+        if (currentInstance.HasOptiFine && !string.IsNullOrEmpty(currentInstance.OptiFine))
+        {
+            var optiFineVersion = currentInstance.OptiFine;
             selectedOptiFine = new GameDownload.DlOptiFineListEntry
             {
-                DisplayName = currentInstance.VanillaName + " " + currentInstance.OptiFine.Replace("_", " "),
-                IsPreview = currentInstance.OptiFine.ContainsF("pre"), Inherit = currentInstance.VanillaName,
-                NameVersion = currentInstance.VanillaName + "-OptiFine_HD_U_" + currentInstance.OptiFine
+                DisplayName = vanillaName + " " + optiFineVersion.Replace("_", " "),
+                IsPreview = optiFineVersion.ContainsF("pre"), Inherit = vanillaName,
+                NameVersion = vanillaName + "-OptiFine_HD_U_" + optiFineVersion
             };
+        }
+
         if (currentInstance.HasCleanroom)
         {
-            _selectedLoaderType = ModLoaderType.Cleanroom;
-            selectedAPIName = "Cleanroom";
-            selectedCleanroomVersion = currentInstance.Cleanroom;
-            selectedCleanroom = new GameDownload.DlCleanroomListEntry(selectedCleanroomVersion);
+            if (!string.IsNullOrEmpty(currentInstance.Cleanroom))
+            {
+                _selectedLoaderType = ModLoaderType.Cleanroom;
+                selectedAPIName = "Cleanroom";
+                selectedCleanroomVersion = currentInstance.Cleanroom;
+                selectedCleanroom = new GameDownload.DlCleanroomListEntry(selectedCleanroomVersion);
+            }
         }
         else if (currentInstance.HasForge)
         {
-            _selectedLoaderType = ModLoaderType.Forge;
-            selectedForge =
-                new GameDownload.DlForgeVersionEntry(currentInstance.Forge, null, currentInstance.VanillaName)
-                {
-                    Category = "installer", forgeType = GameDownload.DlForgelikeEntry.ForgelikeType.Forge,
-                    Inherit = currentInstance.VanillaName
-                };
+            if (!string.IsNullOrEmpty(currentInstance.Forge))
+            {
+                _selectedLoaderType = ModLoaderType.Forge;
+                selectedForge =
+                    new GameDownload.DlForgeVersionEntry(currentInstance.Forge, null, vanillaName)
+                    {
+                        Category = "installer",
+                        forgeType = GameDownload.DlForgelikeEntry.ForgelikeType.Forge,
+                        Inherit = vanillaName
+                    };
+            }
         }
         else if (currentInstance.HasLegacyFabric)
         {
-            _selectedLoaderType = ModLoaderType.LegacyFabric;
-            selectedLegacyFabric = currentInstance.LegacyFabric;
-            selectedLegacyFabricApi = (Comp.CompFile)GetCurrentLegacyFabricApi();
+            if (!string.IsNullOrEmpty(currentInstance.LegacyFabric))
+            {
+                _selectedLoaderType = ModLoaderType.LegacyFabric;
+                selectedLegacyFabric = currentInstance.LegacyFabric;
+                selectedLegacyFabricApi = (Comp.CompFile)GetCurrentLegacyFabricApi();
+            }
         }
         else if (currentInstance.HasFabric)
         {
-            _selectedLoaderType = ModLoaderType.Fabric;
-            selectedFabric = currentInstance.Fabric;
-            selectedFabricApi = (Comp.CompFile)GetCurrentFabricApi();
+            if (!string.IsNullOrEmpty(currentInstance.Fabric))
+            {
+                _selectedLoaderType = ModLoaderType.Fabric;
+                selectedFabric = currentInstance.Fabric;
+                selectedFabricApi = (Comp.CompFile)GetCurrentFabricApi();
+            }
         }
         else if (currentInstance.HasLabyMod)
         {
-            _selectedLoaderType = ModLoaderType.LabyMod;
-            selectedLabyModVersion = currentInstance.LabyMod;
+            if (!string.IsNullOrEmpty(currentInstance.LabyMod))
+            {
+                _selectedLoaderType = ModLoaderType.LabyMod;
+                selectedLabyModVersion = currentInstance.LabyMod;
+            }
         }
         else if (currentInstance.HasNeoForge)
         {
-            _selectedLoaderType = ModLoaderType.NeoForge;
-            selectedNeoForgeVersion = currentInstance.NeoForge;
-            selectedNeoForge = new GameDownload.DlNeoForgeListEntry(currentInstance.NeoForge)
+            if (!string.IsNullOrEmpty(currentInstance.NeoForge))
             {
-                VersionName = currentInstance.NeoForge, Inherit = currentInstance.VanillaName,
-                forgeType = GameDownload.DlForgelikeEntry.ForgelikeType.NeoForge
-            };
+                _selectedLoaderType = ModLoaderType.NeoForge;
+                selectedNeoForgeVersion = currentInstance.NeoForge;
+                selectedNeoForge = new GameDownload.DlNeoForgeListEntry(currentInstance.NeoForge)
+                {
+                    VersionName = currentInstance.NeoForge, Inherit = vanillaName,
+                    forgeType = GameDownload.DlForgelikeEntry.ForgelikeType.NeoForge
+                };
+            }
         }
 
         if (currentInstance.HasFabric && currentInstance.HasOptiFine)
@@ -1123,6 +1165,18 @@ public partial class PageInstanceInstall
     #region 加载器
 
     // 结果数据化
+    private static string? GetVersionTypeKey(string key)
+    {
+        return key switch
+        {
+            "正式版" => "Download.Version.Type.Release",
+            "预览版" => "Download.Version.Type.Development",
+            "远古版" => "Download.Version.Type.BeforeRelease",
+            "愚人节版" => "Download.Version.Type.AprilFools",
+            _ => null
+        };
+    }
+
     private static string GetVersionTypeTitle(string key) =>
         PageInstanceInstallViewModel.GetVersionTypeTitle(key);
 
@@ -1178,7 +1232,8 @@ public partial class PageInstanceInstall
                                     type = "愚人节版";
                                     Version["id"] = Version["id"].ToString().Replace("point", ".");
                                     Version["type"] = "special";
-                                    Version.Add("lore", McVersionClassifier.GetMcFoolName((string)Version["id"]));
+                                    Version["lore"] =
+                                        McVersionClassifier.GetMcFoolNameKey((string)Version["id"]);
                                     break;
                                 }
                                 case "20w14infinite":
@@ -1187,7 +1242,8 @@ public partial class PageInstanceInstall
                                     type = "愚人节版";
                                     Version["id"] = "20w14∞";
                                     Version["type"] = "special";
-                                    Version.Add("lore", McVersionClassifier.GetMcFoolName((string)Version["id"]));
+                                    Version["lore"] =
+                                        McVersionClassifier.GetMcFoolNameKey((string)Version["id"]);
                                     break;
                                 }
                                 case "3d shareware v1.34":
@@ -1202,8 +1258,9 @@ public partial class PageInstanceInstall
                                 {
                                     type = "愚人节版";
                                     Version["type"] = "special";
-                                    Version.Add("lore",
-                                        McVersionClassifier.GetMcFoolName((string)Version["id"])); // 4/1 自动视作愚人节版
+                                    Version["lore"] =
+                                        McVersionClassifier.GetMcFoolNameKey(
+                                            (string)Version["id"]); // 4/1 自动视作愚人节版
                                     break;
                                 }
 
@@ -1246,15 +1303,25 @@ public partial class PageInstanceInstall
                 // 清空当前
                 PanMinecraft.Children.Clear();
                 // 添加最新版本
-                var cardInfo = new MyCard { Title = Lang.Text("Download.Version.Latest.Title"), Margin = new Thickness(0d, 15d, 0d, 15d) };
+                var cardInfo = new MyCard { Margin = new Thickness(0d, 15d, 0d, 15d) };
+                LocalizedText.TryBind(
+                    cardInfo,
+                    "Title",
+                    () => Lang.Text("Download.Version.Latest.Title"));
                 var topestVersions = new List<JsonObject>();
                 var release = (JsonObject)dict["正式版"][0].DeepClone();
-                release["lore"] = Lang.Text("Download.Version.Latest.Release", Lang.Date(release["releaseTime"].ToObject<DateTime>(), "g"));
+                release["lore"] = "Download.Version.Latest.Release";
+                release["loreArgs"] =
+                    new JsonArray(release["releaseTime"].ToObject<DateTime>().ToString("O"));
+                release["loreArgsType"] = "date";
                 topestVersions.Add(release);
                 if (dict["正式版"][0]["releaseTime"].ToObject<DateTime>() < dict["预览版"][0]["releaseTime"].ToObject<DateTime>())
                 {
                     var snapshot = (JsonObject)dict["预览版"][0].DeepClone();
-                    snapshot["lore"] = Lang.Text("Download.Version.Latest.Development", Lang.Date(snapshot["releaseTime"].ToObject<DateTime>(), "g"));
+                    snapshot["lore"] = "Download.Version.Latest.Development";
+                    snapshot["loreArgs"] =
+                        new JsonArray(snapshot["releaseTime"].ToObject<DateTime>().ToString("O"));
+                    snapshot["loreArgsType"] = "date";
                     topestVersions.Add(snapshot);
                 }
 
@@ -1282,8 +1349,15 @@ public partial class PageInstanceInstall
                     if (!Pair.Value.Any())
                         continue;
                     // 增加卡片
-                    var newCard = new MyCard
-                        { Title = GetVersionTypeTitle(Pair.Key) + " (" + Pair.Value.Count + ")", Margin = new Thickness(0d, 0d, 0d, 15d) };
+                    var newCard = new MyCard { Margin = new Thickness(0d, 0d, 0d, 15d) };
+                    var typeTitleFallback = GetVersionTypeTitle(Pair.Key);
+                    var typeKey = GetVersionTypeKey(Pair.Key);
+                    var typeCount = Pair.Value.Count;
+                    LocalizedText.TryBind(
+                        newCard,
+                        "Title",
+                        () =>
+                            $"{(typeKey is null ? typeTitleFallback : Lang.Text(typeKey))} ({typeCount})");
                     var newStack = new StackPanel
                     {
                         Margin = new Thickness(20d, MyCard.SwapedHeight, 18d, 0d),
@@ -1309,6 +1383,8 @@ public partial class PageInstanceInstall
                     var item = DownloadUi.McDownloadListItem(Version, (_, _) => { }, false);
                     MinecraftSelected(item, null);
                 }
+
+                mcVersionWaitingForSelect = null;
             }
             catch (Exception ex)
             {
@@ -2187,9 +2263,7 @@ public partial class PageInstanceInstall
     {
         try
         {
-            if (supportVersions.Contains(minecraftVersion)) return true;
-
-            return false;
+            return Comp.ContainsGameVersion(supportVersions, minecraftVersion);
         }
         catch (Exception ex)
         {
@@ -2318,7 +2392,7 @@ public partial class PageInstanceInstall
         {
             if (_vanillaName is null)
                 return false;
-            return modFile.GameVersions.Contains(_vanillaName);
+            return Comp.ContainsGameVersion(modFile.GameVersions, _vanillaName);
         }
         catch (Exception ex)
         {

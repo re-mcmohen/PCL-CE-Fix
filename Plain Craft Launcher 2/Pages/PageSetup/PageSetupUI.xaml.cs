@@ -266,6 +266,12 @@ public partial class PageSetupUI
         if (PanBackgroundOpacity is null)
             return;
         _vm.ApplyBackgroundState(show, count);
+        LocalizedText.TryBind(
+            CardBackground,
+            "Title",
+            () => show
+                ? Lang.Text("Setup.Ui.Background.TitleWithCount", count)
+                : Lang.Text("Setup.Ui.Background.TitleDefault"));
         CardBackground.TriggerForceResize();
     }
 
@@ -566,7 +572,14 @@ public partial class PageSetupUI
         if (PanBackgroundOpacity is null)
             return;
         var hasMusic = Music.musicAllList.Any();
+        var musicCount = Music.musicAllList.Count;
         _vm.ApplyMusicState(hasMusic, hasMusic ? Common.EnumerateFiles(Common.ExePath + @"PCL\Musics\").Count() : 0);
+        LocalizedText.TryBind(
+            CardMusic,
+            "Title",
+            () => hasMusic
+                ? Lang.Text("Setup.Ui.Music.TitleWithCount", musicCount)
+                : Lang.Text("Setup.Ui.Music.Title"));
         CardMusic.TriggerForceResize();
     }
 
@@ -747,7 +760,15 @@ public partial class PageSetupUI
 
             // 功能隐藏设置卡片
             if (Launcher.frmSetupUi is not null)
+            {
                 Launcher.frmSetupUi.ViewModel.ApplyFeatureHideState(HiddenForceShow, conf.FunctionHidden);
+                LocalizedText.TryBind(
+                    Launcher.frmSetupUi.CardSwitch,
+                    "Title",
+                    () => HiddenForceShow
+                        ? Lang.Text("Setup.Ui.FeatureHide.TitleTemporarilyDisabled")
+                        : Lang.Text("Setup.Ui.FeatureHide.Title"));
+            }
 
             // 设置子页面 (FrmSetupLeft)
             if (Launcher.frmSetupLeft is not null)

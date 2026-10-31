@@ -30,11 +30,19 @@ public partial class PageSelectLeft : IRefreshable
         RefreshCurrent();
     }
 
+    protected override void RefreshLocalization()
+    {
+        // 重建文件夹列表前记录滚动位置，避免切语言时跳回顶部
+        var savedOffset = PanScroll.VerticalOffset;
+        McFolderListUI(true);
+        Dispatcher.BeginInvoke(new Action(() => PanScroll.ScrollToVerticalOffset(savedOffset)));
+    }
+
     private void PageSelectLeft_Initialized(object sender, EventArgs e)
     {
         GameFolders.McFolderListLoader.PreviewFinish += _ =>
         {
-            if (Launcher.frmSelectLeft is not null) Common.RunInUiWait(McFolderListUI);
+            if (Launcher.frmSelectLeft is not null) Common.RunInUiWait(() => McFolderListUI());
         };
     }
 
@@ -45,12 +53,13 @@ public partial class PageSelectLeft : IRefreshable
         _vm.IsFirstLoad = false;
     }
 
-    private void McFolderListUI()
+    private void McFolderListUI(bool force = false)
     {
         try
         {
             // 确认数据有变化
-            if (mcFolderListLast is not null && mcFolderListLast.SequenceEqual(GameFolders.mcFolderList))
+            if (!force && mcFolderListLast is not null &&
+                mcFolderListLast.SequenceEqual(GameFolders.mcFolderList))
                 return;
 
             mcFolderListLast = new List<GameFolders.McFolder>(GameFolders.mcFolderList);
@@ -59,13 +68,14 @@ public partial class PageSelectLeft : IRefreshable
             Launcher.frmSelectLeft.PanList.Children.Clear();
 
             // 文件夹列表标题
-            Launcher.frmSelectLeft.PanList.Children.Add(new TextBlock
+            var listTitle = new TextBlock
             {
-                Text = Lang.Text("Select.Folder.ListTitle"),
                 Margin = new Thickness(13, 18, 5, 4),
                 Opacity = 0.6,
                 FontSize = 12
-            });
+            };
+            listTitle.TrySetLocalizedValue("Text", "Select.Folder.ListTitle");
+            Launcher.frmSelectLeft.PanList.Children.Add(listTitle);
 
             for (var i = 0; i < GameFolders.mcFolderList.Count; i++)
             {
@@ -75,16 +85,18 @@ public partial class PageSelectLeft : IRefreshable
                 var contMenu = new ContextMenu();
 
                 // 添加菜单项
-                void AddMenuItem(string name, string header, string svgIcon = null, Thickness? padding = null,
+                void AddMenuItem(string name, string headerKey, string svgIcon = null,
+                    Thickness? padding = null,
                     RoutedEventHandler clickHandler = null)
                 {
                     var item = new MyMenuItem
                     {
                         Name = name,
-                        Header = header,
                         SvgIcon = svgIcon,
                         Padding = padding ?? new Thickness(0)
                     };
+                    // 菜单会随页面缓存长期存活，标题需要按当前语言求值
+                    item.SetLocalizedValue(HeaderedItemsControl.HeaderProperty, headerKey);
                     if (clickHandler is not null)
                         item.Click += clickHandler;
                     contMenu.Items.Add(item);
@@ -102,54 +114,86 @@ public partial class PageSelectLeft : IRefreshable
                 switch (folder.Type)
                 {
                     case GameFolders.McFolder.Types.Original:
-                        AddMenuItem("Rename", Lang.Text("Select.Folder.Rename"), iconRename, new Thickness(0, 2, 0, 0),
+                        AddMenuItem("Rename", "Select.Folder.Rename", iconRename,
+                            new Thickness(0, 2, 0, 0),
                             Launcher.frmSelectLeft.Rename_Click);
-                        AddMenuItem("MoveUp", Lang.Text("Select.Folder.MoveUp"), iconMoveup, null,
+                        AddMenuItem("MoveUp", "Select.Folder.MoveUp", iconMoveup, null,
                             Launcher.frmSelectLeft.MoveUp_Click);
-                        AddMenuItem("MoveDown", Lang.Text("Select.Folder.MoveDown"), iconMovedown, null,
+                        AddMenuItem("MoveDown", "Select.Folder.MoveDown", iconMovedown, null,
                             Launcher.frmSelectLeft.MoveDown_Click);
-                        AddMenuItem("Open", Lang.Text("Common.Action.Open"), iconOpen, null,
+                        AddMenuItem("Open", "Common.Action.Open", iconOpen, null,
                             Launcher.frmSelectLeft.Open_Click);
-                        AddMenuItem("Refresh", Lang.Text("Common.Action.Refresh"), iconRefresh, null,
+                        AddMenuItem("Refresh", "Common.Action.Refresh", iconRefresh, null,
                             Launcher.frmSelectLeft.Refresh_Click);
                         AddMenuItem("Delete",
-                            PageSelectLeftViewModel.GetDeleteMenuText(folder, GameFolders.mcFolderList.Count),
-                            iconDelete, new Thickness(0, 0, 0, 2),
+                            GameFolders.mcFolderList.Count == 1 &&
+                            folder.Location == Path.Combine(Common.ExePath, ".minecraft") + @"\"
+                                ? "Select.Folder.Clear"
+                                : "Common.Action.Delete", iconDelete, new Thickness(0, 0, 0, 2),
                             Launcher.frmSelectLeft.Delete_Click);
                         break;
 
                     case GameFolders.McFolder.Types.RenamedOriginal:
-                        AddMenuItem("Restore", Lang.Text("Select.Folder.RestoreName"), iconRestore,
+                        AddMenuItem("Restore", "Select.Folder.RestoreName", iconRestore,
                             new Thickness(0, 2, 0, 0),
                             Launcher.frmSelectLeft.Restore_Click);
-                        AddMenuItem("Rename", Lang.Text("Select.Folder.Rename"), iconRename, null,
+                        AddMenuItem("Rename", "Select.Folder.Rename", iconRename, null,
                             Launcher.frmSelectLeft.Rename_Click);
-                        AddMenuItem("MoveUp", Lang.Text("Select.Folder.MoveUp"), iconMoveup, null,
+                        AddMenuItem("MoveUp", "Select.Folder.MoveUp", iconMoveup, null,
                             Launcher.frmSelectLeft.MoveUp_Click);
-                        AddMenuItem("MoveDown", Lang.Text("Select.Folder.MoveDown"), iconMovedown, null,
+                        AddMenuItem("MoveDown", "Select.Folder.MoveDown", iconMovedown, null,
                             Launcher.frmSelectLeft.MoveDown_Click);
-                        AddMenuItem("Open", Lang.Text("Common.Action.Open"), iconOpen, null,
+                        AddMenuItem("Open", "Common.Action.Open", iconOpen, null,
                             Launcher.frmSelectLeft.Open_Click);
-                        AddMenuItem("Refresh", Lang.Text("Common.Action.Refresh"), iconRefresh, null,
+                        AddMenuItem("Refresh", "Common.Action.Refresh", iconRefresh, null,
                             Launcher.frmSelectLeft.Refresh_Click);
-                        AddMenuItem("Delete", Lang.Text("Common.Action.Delete"), iconDelete, new Thickness(0, 0, 0, 2),
+                        AddMenuItem("Delete", "Common.Action.Delete", iconDelete,
+                            new Thickness(0, 0, 0, 2),
                             Launcher.frmSelectLeft.Delete_Click);
                         break;
 
                     case GameFolders.McFolder.Types.Custom:
-                        AddMenuItem("Rename", Lang.Text("Select.Folder.Rename"), iconRename, new Thickness(0, 2, 0, 0),
+                        AddMenuItem(
+                            "Rename",
+                            "Select.Folder.Rename",
+                            iconRename,
+                            new Thickness(0, 2, 0, 0),
                             Launcher.frmSelectLeft.Rename_Click);
-                        AddMenuItem("MoveUp", Lang.Text("Select.Folder.MoveUp"), iconMoveup, null,
+                        AddMenuItem(
+                            "MoveUp",
+                            "Select.Folder.MoveUp",
+                            iconMoveup,
+                            null,
                             Launcher.frmSelectLeft.MoveUp_Click);
-                        AddMenuItem("MoveDown", Lang.Text("Select.Folder.MoveDown"), iconMovedown, null,
+                        AddMenuItem(
+                            "MoveDown",
+                            "Select.Folder.MoveDown",
+                            iconMovedown,
+                            null,
                             Launcher.frmSelectLeft.MoveDown_Click);
-                        AddMenuItem("Open", Lang.Text("Common.Action.Open"), iconOpen, null,
+                        AddMenuItem(
+                            "Open",
+                            "Common.Action.Open",
+                            iconOpen,
+                            null,
                             Launcher.frmSelectLeft.Open_Click);
-                        AddMenuItem("Refresh", Lang.Text("Common.Action.Refresh"), iconRefresh, null,
+                        AddMenuItem(
+                            "Refresh",
+                            "Common.Action.Refresh",
+                            iconRefresh,
+                            null,
                             Launcher.frmSelectLeft.Refresh_Click);
-                        AddMenuItem("Remove", Lang.Text("Select.Folder.RemoveFromList"), iconRemove,
-                            null, Launcher.frmSelectLeft.Remove_Click);
-                        AddMenuItem("Delete", Lang.Text("Common.Action.Delete"), iconDelete, new Thickness(0, 0, 0, 2),
+                        AddMenuItem(
+                            "Remove",
+                            "Select.Folder.RemoveFromList",
+                            iconRemove,
+                            null,
+                            Launcher.frmSelectLeft.Remove_Click);
+                        AddMenuItem(
+                            "Delete",
+                            "Common.Action.Delete",
+                            iconDelete,
+                            new Thickness(0, 0, 0, 2),
                             Launcher.frmSelectLeft.Delete_Click);
                         break;
                 }
@@ -171,7 +215,7 @@ public partial class PageSelectLeft : IRefreshable
                     IsScaleAnimationEnabled = false,
                     Type = MyListItem.CheckType.RadioBox,
                     MinPaddingRight = 30,
-                    Title = folder.Name,
+                    Title = folder.DisplayName,
                     Info = folder.Location,
                     Height = 40,
                     ContextMenu = contMenu,
@@ -203,17 +247,18 @@ public partial class PageSelectLeft : IRefreshable
 
                 Launcher.frmSelectLeft.PanList.Children.Add(newItem);
 
-                LogWrapper.Info($"[Minecraft] 有效的 Minecraft 文件夹：{folder.Name} > {folder.Location}");
+                LogWrapper.Info($"[Minecraft] 有效的 Minecraft 文件夹：{folder.DisplayName} > {folder.Location}");
             }
 
             // 标题文本
-            Launcher.frmSelectLeft.PanList.Children.Add(new TextBlock
+            var addOrImportTitle = new TextBlock
             {
-                Text = Lang.Text("Select.Folder.AddOrImport"),
                 Margin = new Thickness(13, 18, 5, 4),
                 Opacity = 0.6,
                 FontSize = 12
-            });
+            };
+            addOrImportTitle.TrySetLocalizedValue("Text", "Select.Folder.AddOrImport");
+            Launcher.frmSelectLeft.PanList.Children.Add(addOrImportTitle);
 
             // 创建新文件夹按钮
             if (!Directory.Exists(Path.Combine(Common.ExePath, ".minecraft")))
@@ -222,12 +267,12 @@ public partial class PageSelectLeft : IRefreshable
                 {
                     IsScaleAnimationEnabled = false,
                     Type = MyListItem.CheckType.Clickable,
-                    Title = Lang.Text("Select.Folder.CreateNew.Title"),
                     Height = 34,
-                    ToolTip = Lang.Text("Select.Folder.CreateNew.ToolTip"),
                     LogoScale = 0.9,
                     SvgIcon = "lucide/folder-plus"
                 };
+                itemCreate.TrySetLocalizedValue("Title", "Select.Folder.CreateNew.Title");
+                itemCreate.TrySetLocalizedValue("ToolTip", "Select.Folder.CreateNew.ToolTip");
                 ToolTipService.SetPlacement(itemCreate, PlacementMode.Right);
                 itemCreate.Click += (_, _) => Launcher.frmSelectLeft.Create_Click();
                 Launcher.frmSelectLeft.PanList.Children.Add(itemCreate);
@@ -238,11 +283,11 @@ public partial class PageSelectLeft : IRefreshable
             {
                 IsScaleAnimationEnabled = false,
                 Type = MyListItem.CheckType.Clickable,
-                Title = Lang.Text("Select.Folder.AddExisting.Title"),
                 Height = 34,
-                ToolTip = Lang.Text("Select.Folder.AddExisting.ToolTip"),
                 SvgIcon = "lucide/folder-input"
             };
+            itemAdd.TrySetLocalizedValue("Title", "Select.Folder.AddExisting.Title");
+            itemAdd.TrySetLocalizedValue("ToolTip", "Select.Folder.AddExisting.ToolTip");
             ToolTipService.SetPlacement(itemAdd, PlacementMode.Right);
             itemAdd.Click += (_, _) => Launcher.frmSelectLeft.Add_Click();
             Launcher.frmSelectLeft.PanList.Children.Add(itemAdd);
@@ -252,11 +297,11 @@ public partial class PageSelectLeft : IRefreshable
             {
                 IsScaleAnimationEnabled = false,
                 Type = MyListItem.CheckType.Clickable,
-                Title = Lang.Text("Select.Folder.ImportModpack.Title"),
                 Height = 34,
-                ToolTip = Lang.Text("Select.Folder.ImportModpack.ToolTip"),
                 SvgIcon = "lucide/package-plus"
             };
+            itemInstall.TrySetLocalizedValue("Title", "Select.Folder.ImportModpack.Title");
+            itemInstall.TrySetLocalizedValue("ToolTip", "Select.Folder.ImportModpack.ToolTip");
             ToolTipService.SetPlacement(itemInstall, PlacementMode.Right);
             itemInstall.Click += (_, _) => Modpack.ModpackInstall();
             Launcher.frmSelectLeft.PanList.Children.Add(itemInstall);
@@ -333,9 +378,43 @@ public partial class PageSelectLeft : IRefreshable
                 .PlacementTarget)
             .Tag;
         var index = GameFolders.mcFolderList.IndexOf(folder);
-        GameFolders.mcFolderList[index].Type = GameFolders.McFolder.Types.Original;
-        GameFolders.mcFolderList[index].Name = Lang.Text("Select.Folder.OfficialLauncherFolder");
+        GameFolders.mcFolderList[index] .Type = GameFolders.McFolder.Types.Original;
+        GameFolders.mcFolderList[index].Name = GetOriginalFolderName(folder.Location);
         UpdateFolderOrder();
+    }
+
+    /// <summary>
+    ///     取回指定路径对应的默认显示名称。<br/>
+    ///     内置文件夹返回带 <c>$</c> 前缀的资源键，其余文件夹返回目录名。
+    /// </summary>
+    private static string GetOriginalFolderName(string? location)
+    {
+        var normalized = Normalize(location);
+        if (string.Equals(
+                normalized,
+                Normalize(Common.ExePath),
+                StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(
+                normalized,
+                Normalize(Path.Combine(Common.ExePath, ".minecraft")),
+                StringComparison.OrdinalIgnoreCase))
+            return GameFolders.McFolder.BuiltinNamePrefix + "Select.Folder.CurrentFolder";
+
+        var mojangPath = Normalize(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            ".minecraft"));
+        if (string.Equals(normalized, mojangPath, StringComparison.OrdinalIgnoreCase))
+            return GameFolders.McFolder.BuiltinNamePrefix + "Select.Folder.OfficialLauncherFolder";
+
+        var directoryName = Path.GetFileName(normalized);
+        return string.IsNullOrEmpty(directoryName)
+            ? GameFolders.McFolder.BuiltinNamePrefix + "Select.Folder.OfficialLauncherFolder"
+            : directoryName;
+
+        static string Normalize(string? path)
+        {
+            return (path ?? "").TrimEnd('\\', '/');
+        }
     }
 
     // 添加文件夹
@@ -591,10 +670,16 @@ public partial class PageSelectLeft : IRefreshable
             Lang.Text(isClearing ? "Select.Folder.Clear.FinalWarning" : "Select.Folder.Delete.FinalWarning",
                 folder.Location);
         var confirmTitle = Lang.Text(isClearing ? "Select.Folder.Clear.Confirm" : "Select.Folder.Delete.Confirm");
-        var inProgress = Lang.Text(isClearing ? "Select.Folder.Clear.InProgress" : "Select.Folder.Delete.InProgress",
-            folder.Name);
-        var success = Lang.Text(isClearing ? "Select.Folder.Clear.Success" : "Select.Folder.Delete.Success",
-            folder.Name);
+        var inProgress = Lang.Text(
+            isClearing
+                ? "Select.Folder.Clear.InProgress"
+                : "Select.Folder.Delete.InProgress",
+            folder.DisplayName);
+        var success = Lang.Text(
+            isClearing
+                ? "Select.Folder.Clear.Success"
+                : "Select.Folder.Delete.Success",
+            folder.DisplayName);
 
         try
         {
@@ -610,7 +695,7 @@ public partial class PageSelectLeft : IRefreshable
         }
         catch (Exception ex)
         {
-            Common.Log(ex, Lang.Text("Select.Folder.Error.Operate", deleteText, folder.Name));
+            Common.Log(ex, Lang.Text("Select.Folder.Error.Operate", deleteText, folder.DisplayName));
             return;
         }
 
@@ -634,9 +719,12 @@ public partial class PageSelectLeft : IRefreshable
             {
                 Common.Log(
                     ex,
-                    Lang.Text("Select.Folder.Error.Operate", deleteText, folder.Name),
+                    Lang.Text("Select.Folder.Error.Operate", deleteText, folder.DisplayName),
                     Common.LogLevel.Hint,
-                    userSummary: Lang.Text("Select.Folder.Error.Operate", deleteText, folder.Name));
+                    userSummary: Lang.Text(
+                        "Select.Folder.Error.Operate",
+                        deleteText,
+                        folder.DisplayName));
             }
             finally
             {
@@ -680,11 +768,14 @@ public partial class PageSelectLeft : IRefreshable
         try
         {
             // 获取输入
-            var newName = await Launcher.MyMsgBoxInputAsync(Lang.Text("Select.Folder.Rename.Title"), "", folder.Name,
-            [
-                new NullOrWhiteSpaceValidator(), new StringLengthValidator(1, 30),
-                new BlacklistValidator([">", "|"])
-            ]);
+            var newName = await Launcher.MyMsgBoxInputAsync(
+                Lang.Text("Select.Folder.Rename.Title"),
+                "",
+                folder.DisplayName,
+                [
+                    new NullOrWhiteSpaceValidator(), new StringLengthValidator(1, 30),
+                    new BlacklistValidator([">", "|"])
+                ]);
             if (string.IsNullOrWhiteSpace(newName))
                 return;
             // 修改自定义名

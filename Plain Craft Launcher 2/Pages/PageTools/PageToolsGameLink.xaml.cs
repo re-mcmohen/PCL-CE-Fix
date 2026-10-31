@@ -84,7 +84,9 @@ public partial class PageToolsGameLink : IPageView
             {
                 _vm.HintAnnounceVisibility = Visibility.Visible;
                 HintAnnounce.Theme = MyHint.Themes.Blue;
-                _vm.HintAnnounceText = Lang.Text("Tools.GameLink.Loading.ConnectingServer");
+                HintAnnounce.TrySetLocalizedValue(
+                    "Text",
+                    "Tools.GameLink.Loading.ConnectingServer");
             })));
             loaders.Add(new Loading.LoaderTask<int, int>(Lang.Text("Link.Mod.Task.FetchAnnouncement"), _ => GetAnnouncement()) { ProgressWeight = 0.5d });
             lobbyAnnouncementLoader = new Loading.LoaderCombo<int>("Lobby Announcement", loaders) { show = false };
@@ -103,7 +105,7 @@ public partial class PageToolsGameLink : IPageView
 
             Common.RunInUi(() =>
             {
-                CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+                CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
                 StackPlayerList.Children.Clear();
                 CurrentSubpage = Subpages.PanSelect;
             });
@@ -118,7 +120,7 @@ public partial class PageToolsGameLink : IPageView
     public async void Reload()
     {
         _vm.HintAnnounceVisibility = Visibility.Visible;
-        _vm.HintAnnounceText = Lang.Text("Tools.GameLink.Loading.ConnectingServer");
+        HintAnnounce.TrySetLocalizedValue("Text", "Tools.GameLink.Loading.ConnectingServer");
         HintAnnounce.Theme = MyHint.Themes.Blue;
 
         if (_linkAnnounceUpdateCancelSource is not null)
@@ -200,7 +202,7 @@ public partial class PageToolsGameLink : IPageView
 
             Common.RunInUi(() =>
             {
-                CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+                CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
                 StackPlayerList.Children.Clear();
                 CurrentSubpage = Subpages.PanSelect;
             });
@@ -216,9 +218,12 @@ public partial class PageToolsGameLink : IPageView
     {
         Common.RunInUi(() =>
         {
-            _vm.FinishQualityText = Lang.Text("Tools.GameLink.Finish.Connected");
-            _vm.FinishPingText = Lang.Text("Tools.GameLink.Finish.PingMs", latency);
-            _vm.ConnectTypeText = Lang.Text("Tools.GameLink.Finish.Unavailable");
+            LabFinishQuality.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Connected");
+            LocalizedText.TryBind(
+                LabFinishPing,
+                "Text",
+                () => Lang.Text("Tools.GameLink.Finish.PingMs", latency));
+            LabConnectType.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Unavailable");
         });
     }
 
@@ -226,7 +231,7 @@ public partial class PageToolsGameLink : IPageView
     {
         Common.RunInUi(() =>
         {
-            CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+            CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
             StackPlayerList.Children.Clear();
             CurrentSubpage = Subpages.PanSelect;
         });
@@ -263,8 +268,11 @@ public partial class PageToolsGameLink : IPageView
                     break;
             }
 
-            _vm.FinishQualityText = Lang.Text("Tools.GameLink.Finish.Connected");
-            CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListCount", LobbyService.Players.Count);
+            LabFinishQuality.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Connected");
+            LocalizedText.TryBind(
+                CardPlayerList,
+                "Title",
+                () => Lang.Text("Tools.GameLink.Member.ListCount", LobbyService.Players.Count));
         });
     }
 
@@ -376,25 +384,31 @@ public partial class PageToolsGameLink : IPageView
             {
                 _vm.HintAnnounceVisibility = Visibility.Visible;
                 var info = _linkAnnounces[currentIndex];
-                string prefix;
+                string prefixKey;
                 if (info.Type == LinkAnnounceType.Important)
                 {
                     HintAnnounce.Theme = MyHint.Themes.Red;
-                    prefix = Lang.Text("Tools.GameLink.Announcement.Important");
+                    prefixKey = "Tools.GameLink.Announcement.Important";
                 }
                 else if (info.Type == LinkAnnounceType.Warning)
                 {
                     HintAnnounce.Theme = MyHint.Themes.Yellow;
-                    prefix = Lang.Text("Tools.GameLink.Announcement.Warning");
+                    prefixKey = "Tools.GameLink.Announcement.Warning";
                 }
                 else
                 {
                     HintAnnounce.Theme = MyHint.Themes.Blue;
-                    prefix = Lang.Text("Tools.GameLink.Announcement.Notice");
+                    prefixKey = "Tools.GameLink.Announcement.Notice";
                 }
 
-                _vm.HintAnnounceText = Lang.Text("Tools.GameLink.Announcement.Format", prefix,
-                    info.Content.Replace("\n", "\r\n"));
+                var announceContent = info.Content.Replace("\n", "\r\n");
+                LocalizedText.TryBind(
+                    HintAnnounce,
+                    "Text",
+                    () => Lang.Text(
+                        "Tools.GameLink.Announcement.Format",
+                        Lang.Text(prefixKey),
+                        announceContent));
             }
             else if (_announcementLoadState == AnnouncementLoadState.Loaded)
             {
@@ -503,7 +517,9 @@ public partial class PageToolsGameLink : IPageView
                         _announcementLoadState = AnnouncementLoadState.Failed;
                         _vm.HintAnnounceVisibility = Visibility.Visible;
                         HintAnnounce.Theme = MyHint.Themes.Red;
-                        _vm.HintAnnounceText = Lang.Text("Tools.GameLink.Error.UpdateRequired");
+                        HintAnnounce.TrySetLocalizedValue(
+                            "Text",
+                            "Tools.GameLink.Error.UpdateRequired");
                         LobbyInfoProvider.IsLobbyAvailable = false;
                     });
                     return;
@@ -560,11 +576,17 @@ public partial class PageToolsGameLink : IPageView
 
                 if (string.IsNullOrWhiteSpace(States.Link.NaidRefreshToken))
                 {
-                    Common.RunInUi(() => _vm.NatayarkUserNameText = Lang.Text("Tools.GameLink.Natayark.Login"));
+                    Common.RunInUi(() =>
+                        LabNatayarkUserName.TrySetLocalizedValue(
+                            "Text",
+                            "Tools.GameLink.Natayark.Login"));
                 }
                 else
                 {
-                    Common.RunInUi(() => _vm.NatayarkUserNameText = Lang.Text("Tools.GameLink.Natayark.Loading"));
+                    Common.RunInUi(() =>
+                        LabNatayarkUserName.TrySetLocalizedValue(
+                            "Text",
+                            "Tools.GameLink.Natayark.Loading"));
                     if (string.IsNullOrEmpty(NatayarkProfileManager.NaidProfile.Username))
                         ReloadNaidData();
                     else
@@ -574,10 +596,15 @@ public partial class PageToolsGameLink : IPageView
                             {
                                 _vm.NatayarkUserNameText = NatayarkProfileManager.NaidProfile.Username;
                                 _vm.NatayarkUserNameOpacity = 1;
+                                LabNatayarkUserName.Text = NatayarkProfileManager.NaidProfile.Username;
                             }
                             else
                             {
-                                _vm.NatayarkUserNameText = $"{NatayarkProfileManager.NaidProfile.Username} {Lang.Text("Tools.GameLink.Natayark.Abnormal")}";
+                                LocalizedText.TryBind(
+                                    LabNatayarkUserName,
+                                    "Text",
+                                    () =>
+                                        $"{NatayarkProfileManager.NaidProfile.Username} {Lang.Text("Tools.GameLink.Natayark.Abnormal")}");
                                 _vm.NatayarkUserNameOpacity = 0.6;
                             }
                         });
@@ -606,7 +633,9 @@ public partial class PageToolsGameLink : IPageView
                     _announcementLoadState = AnnouncementLoadState.Failed;
                     _vm.HintAnnounceVisibility = Visibility.Visible;
                     HintAnnounce.Theme = MyHint.Themes.Red;
-                    _vm.HintAnnounceText = Lang.Text("Tools.GameLink.Error.ConnectFailed");
+                    HintAnnounce.TrySetLocalizedValue(
+                        "Text",
+                        "Tools.GameLink.Error.ConnectFailed");
                 });
                 LogWrapper.Error(ex, "[Link] Failed to get lobby announcement");
             }
@@ -726,10 +755,13 @@ public partial class PageToolsGameLink : IPageView
                     {
                         _vm.NatayarkUserNameText = profile.Username;
                         _vm.NatayarkUserNameOpacity = 1.0;
+                        LabNatayarkUserName.Text = profile.Username;
                     }
                     else
                     {
-                        _vm.NatayarkUserNameText = $"{profile.Username} {Lang.Text("Tools.GameLink.Natayark.Abnormal")}";
+                        LocalizedText.TryBind(LabNatayarkUserName, "Text",
+                            () =>
+                                $"{profile.Username} {Lang.Text("Tools.GameLink.Natayark.Abnormal")}");
                         _vm.NatayarkUserNameOpacity = 0.6;
                     }
                 });
@@ -744,7 +776,8 @@ public partial class PageToolsGameLink : IPageView
 
                 Common.RunInUi(() =>
                 {
-                    _vm.NatayarkUserNameText = Lang.Text("Tools.GameLink.Natayark.FetchFailed");
+                    LabNatayarkUserName.TrySetLocalizedValue("Text",
+                        "Tools.GameLink.Natayark.FetchFailed");
                     _vm.NatayarkUserNameOpacity = 0.6;
                 });
 
@@ -769,6 +802,7 @@ public partial class PageToolsGameLink : IPageView
                 {
                     _vm.NatayarkUserNameText = Lang.Text("Tools.GameLink.Natayark.BrowserContinue");
                     _vm.NatayarkUserNameOpacity = 0.6d;
+                    LabNatayarkUserName.TrySetLocalizedValue("Text", "Tools.GameLink.Natayark.BrowserContinue");
                     BtnNatayarkUserName.IsEnabled = false;
                     WebServer.StartNaidAuthorize(() =>
                     {
@@ -784,6 +818,8 @@ public partial class PageToolsGameLink : IPageView
                 States.Link.NaidRefreshTokenConfig.Reset();
                 States.Link.NaidRefreshToken = "";
                 _vm.NatayarkUserNameText = Lang.Text("Tools.GameLink.Natayark.Login");
+                _vm.NatayarkUserNameOpacity = 1d;
+                LabNatayarkUserName.TrySetLocalizedValue("Text", "Tools.GameLink.Natayark.Login");
                 Common.Log("[Link] 已退出登录 Natayark Network");
                 HintService.Hint(Lang.Text("Tools.GameLink.Natayark.LogoutComplete"), HintType.Success, false);
             }
@@ -802,11 +838,15 @@ public partial class PageToolsGameLink : IPageView
         try
         {
             BtnNatTest.IsEnabled = false;
-            _vm.NatTypeText = Lang.Text("Tools.GameLink.Nat.Testing");
+            LabNatType.TrySetLocalizedValue("Text", "Tools.GameLink.Nat.Testing");
             var status = await CliNetTest.GetNetStatusAsync();
-            Common.RunInUi(() => _vm.NatTypeText = Lang.Text("Tools.GameLink.Nat.Result",
-                CliNetTest.GetNatTypeString(status.UdpNatType),
-                CliNetTest.GetNatTypeString(status.TcpNatType)));
+            Common.RunInUi(() => LocalizedText.TryBind(
+                LabNatType,
+                "Text",
+                () => Lang.Text(
+                    "Tools.GameLink.Nat.Result",
+                    CliNetTest.GetNatTypeString(status.UdpNatType),
+                    CliNetTest.GetNatTypeString(status.TcpNatType))));
         }
         catch (Exception ex)
         {
@@ -816,7 +856,7 @@ public partial class PageToolsGameLink : IPageView
                 Common.LogLevel.Hint,
                 userSummary: Lang.Text("Tools.GameLink.Error.NetworkTestFailed"));
             BtnNatTest.IsEnabled = true;
-            _vm.NatTypeText = Lang.Text("Tools.GameLink.Nat.Failed");
+            LabNatType.TrySetLocalizedValue("Text", "Tools.GameLink.Nat.Failed");
         }
         finally
         {
@@ -919,16 +959,17 @@ public partial class PageToolsGameLink : IPageView
         {
             _vm.FinishPingVisibility = Visibility.Collapsed;
             _vm.FinishPingText = "-ms";
+            LabFinishPing.Text = "-ms";
             BtnConnectType.Visibility = Visibility.Collapsed;
-            _vm.ConnectTypeText = Lang.Text("Tools.GameLink.Finish.Connecting");
-            CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+            LabConnectType.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Connecting");
+            CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
             StackPlayerList.Children.Clear();
             _vm.ConnectUserNameText = username;
-            _vm.ConnectUserTypeText = Lang.Text("Tools.GameLink.Finish.Host");
+            LabConnectUserType.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Host");
             _vm.FinishIdText = LobbyService.CurrentLobbyCode;
-            _vm.FinishCopyIpVisibility = Visibility.Collapsed;
+            BtnFinishCopyIp.Visibility = Visibility.Collapsed;
             BtnCreate.IsEnabled = true;
-            _vm.FinishExitText = Lang.Text("Tools.GameLink.Finish.CloseLobby");
+            BtnFinishExit.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.CloseLobby");
             CurrentSubpage = Subpages.PanFinish;
         });
 
@@ -937,7 +978,7 @@ public partial class PageToolsGameLink : IPageView
         if (!res)
             Common.RunInUi(() =>
             {
-                CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+                CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
                 StackPlayerList.Children.Clear();
                 CurrentSubpage = Subpages.PanSelect;
             });
@@ -958,14 +999,15 @@ public partial class PageToolsGameLink : IPageView
         {
             _vm.FinishPingVisibility = Visibility.Visible;
             _vm.FinishPingText = "-ms";
+            LabFinishPing.Text = "-ms";
             BtnConnectType.Visibility = Visibility.Visible;
-            _vm.ConnectTypeText = Lang.Text("Tools.GameLink.Finish.Connecting");
-            CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+            LabConnectType.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Connecting");
+            CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
             StackPlayerList.Children.Clear();
             _vm.ConnectUserNameText = username;
-            _vm.ConnectUserTypeText = Lang.Text("Tools.GameLink.Finish.Guest");
+            LabConnectUserType.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Guest");
             _vm.FinishIdText = id;
-            _vm.FinishCopyIpVisibility = Visibility.Visible;
+            BtnFinishCopyIp.Visibility = Visibility.Visible;
             CurrentSubpage = Subpages.PanFinish;
         });
 
@@ -974,7 +1016,7 @@ public partial class PageToolsGameLink : IPageView
         if (!res)
             Common.RunInUi(() =>
             {
-                CardPlayerList.Title = Lang.Text("Tools.GameLink.Member.ListLoading");
+                CardPlayerList.TrySetLocalizedValue("Title", "Tools.GameLink.Member.ListLoading");
                 StackPlayerList.Children.Clear();
                 CurrentSubpage = Subpages.PanSelect;
             });
@@ -1088,6 +1130,7 @@ public partial class PageToolsGameLink : IPageView
             {
                 CurrentSubpage = Subpages.PanSelect;
                 _vm.FinishExitText = Lang.Text("Tools.GameLink.Finish.Exit");
+                BtnFinishExit.TrySetLocalizedValue("Text", "Tools.GameLink.Finish.Exit");
                 await LobbyService.LeaveLobbyAsync().ConfigureAwait(true);
             }
         }
