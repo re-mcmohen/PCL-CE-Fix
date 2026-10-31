@@ -54,13 +54,11 @@ internal static class DownloadResourceManager
         DownloadQuotaLease? hostLease = null;
         try
         {
-            hostLease = await hostEntry.Quota.AcquireAsync(1,
-                    () => NetFacade.NetTaskConnectionsPerHostLimit,
+            hostLease = await hostEntry.Quota.AcquireAsync(1, () => ModNet.NetTaskConnectionsPerHostLimit,
                 cancellationToken)
             .ConfigureAwait(false);
             var globalLease = await ConnectionQuota.AcquireAsync(1,
-                    () => Math.Clamp(NetFacade.NetTaskConnectionLimit, 1,
-                        NetFacade.NetTaskConnectionLimitMax), cancellationToken)
+                () => Math.Clamp(ModNet.NetTaskConnectionLimit, 1, ModNet.NetTaskConnectionLimitMax), cancellationToken)
                 .ConfigureAwait(false);
             Interlocked.Increment(ref _activeConnectionCount);
             return new DownloadConnectionLease(globalLease, hostLease, hostEntry);
@@ -75,9 +73,7 @@ internal static class DownloadResourceManager
 
     public static async ValueTask<DownloadBufferLease> RentBufferAsync(int minBytes, CancellationToken cancellationToken)
     {
-        var lease = await BufferQuota
-            .AcquireAsync(minBytes, () => NetFacade.NetTaskBufferBudgetBytes, cancellationToken)
-            .ConfigureAwait(false);
+        var lease = await BufferQuota.AcquireAsync(minBytes, () => ModNet.NetTaskBufferBudgetBytes, cancellationToken).ConfigureAwait(false);
         return new DownloadBufferLease(lease, ArrayPool<byte>.Shared.Rent(minBytes));
     }
 
@@ -108,7 +104,7 @@ internal static class DownloadResourceManager
 
     public static async Task ThrottleAsync(int bytes, CancellationToken ct)
     {
-        var limitHigh = NetFacade.NetTaskSpeedLimitHigh;
+        var limitHigh = ModNet.NetTaskSpeedLimitHigh;
         if (limitHigh <= 0 || bytes <= 0)
         {
             return;
@@ -162,7 +158,7 @@ internal static class DownloadResourceManager
         {
             while (true)
             {
-                var currentLimit = NetFacade.NetTaskSpeedLimitHigh;
+                var currentLimit = ModNet.NetTaskSpeedLimitHigh;
                 if (currentLimit <= 0)
                 {
                     break;
@@ -172,7 +168,7 @@ internal static class DownloadResourceManager
                 {
                     lock (ThrottleScheduleLock)
                     {
-                        limitHigh = NetFacade.NetTaskSpeedLimitHigh;
+                        limitHigh = ModNet.NetTaskSpeedLimitHigh;
                         if (limitHigh <= 0)
                             break;
 

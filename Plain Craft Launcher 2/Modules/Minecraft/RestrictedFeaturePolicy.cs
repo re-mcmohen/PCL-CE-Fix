@@ -1,5 +1,6 @@
-using PCL.Core.App.Localization;
 using PCL.Core.App.Region;
+using PCL.Core.App.Localization;
+using PCL.Core.UI;
 
 namespace PCL;
 
@@ -14,7 +15,7 @@ internal static class RestrictedFeaturePolicy
         var assessment = Assess();
         if (!assessment.IsRestricted) return true;
 
-        Common.Log($"[RegionPolicy] 已阻止功能 {feature}，判定原因：{assessment.Reason}");
+        ModBase.Log($"[RegionPolicy] 已阻止功能 {feature}，判定原因：{assessment.Reason}");
         if (showHint)
         {
             HintService.Hint(Lang.Text(assessment.Classification == RegionClassification.Unknown
@@ -27,6 +28,6 @@ internal static class RestrictedFeaturePolicy
     internal static void ThrowIfRestricted(string feature)
     {
         if (Check(feature, false)) return;
-        throw new Common.CancelledException();
+        throw new ModBase.CancelledException();
     }
 }

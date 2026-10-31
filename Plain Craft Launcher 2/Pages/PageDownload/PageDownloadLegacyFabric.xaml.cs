@@ -14,7 +14,7 @@ public partial class PageDownloadLegacyFabric
 
     private void LoaderInit()
     {
-        PageLoaderInit(Load, PanLoad, CardVersions, CardTip, GameDownload.DlLegacyFabricListLoader,
+        PageLoaderInit(Load, PanLoad, CardVersions, CardTip, ModDownload.dlLegacyFabricListLoader,
             _ => Load_OnFinish());
     }
 
@@ -28,35 +28,30 @@ public partial class PageDownloadLegacyFabric
         // 结果数据化
         try
         {
-            var versions =
-                (JsonArray)GameDownload.DlLegacyFabricListLoader.output.Value["installer"];
+            var versions = (JsonArray)ModDownload.dlLegacyFabricListLoader.output.Value["installer"];
             PanVersions.Children.Clear();
             foreach (var Version in versions)
-                PanVersions.Children.Add(DownloadUi.LegacyFabricDownloadListItem(
-                    (JsonObject)Version,
+                PanVersions.Children.Add(ModDownloadLib.LegacyFabricDownloadListItem((JsonObject)Version,
                     (a, b) => this.LegacyFabric_Selected((MyListItem)a, b)));
-            LocalizedText.TryBind(
-                CardVersions,
-                "Title",
-                () => Lang.Text("Download.Version.VersionListCount", versions.Count));
+            CardVersions.Title = Lang.Text("Download.Version.VersionListCount", versions.Count);
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "可视化 LegacyFabric 版本列表出错",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Download.Error.OperationFailed"));
         }
     }
 
     private void LegacyFabric_Selected(MyListItem sender, EventArgs e)
     {
-        DownloadUi.McDownloadLegacyFabricLoaderSave((JsonObject)sender.Tag);
+        ModDownloadLib.McDownloadLegacyFabricLoaderSave((JsonObject)sender.Tag);
     }
 
     private void BtnWeb_Click(object sender, EventArgs e)
     {
-        Common.OpenWebsite("https://legacyfabric.net/");
+        ModBase.OpenWebsite("https://legacyfabric.net/");
     }
 }

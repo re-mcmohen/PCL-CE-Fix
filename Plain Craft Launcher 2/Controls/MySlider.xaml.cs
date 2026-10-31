@@ -2,15 +2,15 @@
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using PCL.Core.App.Localization;
 
+using PCL.Core.App.Localization;
 namespace PCL;
 
 public partial class MySlider
 {
     public delegate void ChangeEventHandler(object sender, bool user);
 
-    public delegate void PreviewChangeEventHandler(object sender, Common.RouteEventArgs e);
+    public delegate void PreviewChangeEventHandler(object sender, ModBase.RouteEventArgs e);
 
     // 自定义属性
 
@@ -23,7 +23,7 @@ public partial class MySlider
 
     // 基础
 
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     public MySlider()
     {
@@ -56,16 +56,16 @@ public partial class MySlider
         {
             try
             {
-                value = (int)Math.Round(Common.MathClamp(value, 0d, MaxValue));
+                value = (int)Math.Round(ModBase.MathClamp(value, 0d, MaxValue));
                 if (_Value == value)
                     return;
 
                 // 触发 Preview 事件，修改新值
                 var oldValue = _Value;
                 _Value = value;
-                if (!Animations.AniExitsAnyControl())
+                if (ModAnimation.AniControlEnabled == 0)
                 {
-                    var e = new Common.RouteEventArgs();
+                    var e = new ModBase.RouteEventArgs();
                     PreviewChange?.Invoke(this, e);
                     if (e.handled)
                     {
@@ -75,7 +75,7 @@ public partial class MySlider
                     }
                 }
 
-                if (IsLoaded && !Animations.AniExitsAnyControl())
+                if (IsLoaded && ModAnimation.AniControlEnabled == 0)
                 {
                     if (ActualWidth < ShapeDot.Width)
                         return;
@@ -83,28 +83,27 @@ public partial class MySlider
                     var deltaProcess =
                         Math.Abs(LineFore.Width / (ActualWidth - ShapeDot.Width) - _Value / (double)MaxValue);
                     var time = (1d - Math.Pow(1d - deltaProcess, 3d)) * 300d + (changeByKey ? 100 : 0);
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaWidth(LineFore,
+                            ModAnimation.AaWidth(LineFore,
                                 Math.Max(0d, newWidth + (newWidth < 0.5d ? 0d : 0.5d)) - LineFore.Width,
                                 (int)Math.Round(time),
                                 ease: time > 50d
-                                    ? new Animations.AniEaseOutFluent()
-                                    : new Animations.AniEaseLinear()),
-                            Animations.AaWidth(LineBack,
+                                    ? new ModAnimation.AniEaseOutFluent()
+                                    : new ModAnimation.AniEaseLinear()),
+                            ModAnimation.AaWidth(LineBack,
                                 Math.Max(0d,
                                     ActualWidth - ShapeDot.Width - newWidth +
                                     (ActualWidth - ShapeDot.Width - newWidth < 0.5d ? 0d : 0.5d)) - LineBack.Width,
                                 (int)Math.Round(time),
                                 ease: time > 50d
-                                    ? new Animations.AniEaseOutFluent()
-                                    : new Animations.AniEaseLinear()),
-                            Animations.AaX(ShapeDot, newWidth - ShapeDot.Margin.Left,
-                                (int)Math.Round(time),
+                                    ? new ModAnimation.AniEaseOutFluent()
+                                    : new ModAnimation.AniEaseLinear()),
+                            ModAnimation.AaX(ShapeDot, newWidth - ShapeDot.Margin.Left, (int)Math.Round(time),
                                 ease: time > 50d
-                                    ? new Animations.AniEaseOutFluent()
-                                    : new Animations.AniEaseLinear())
+                                    ? new ModAnimation.AniEaseOutFluent()
+                                    : new ModAnimation.AniEaseLinear())
                         }, "MySlider Progress " + Uuid);
                 }
                 else
@@ -112,16 +111,16 @@ public partial class MySlider
                     RefreshWidth(null, null);
                 }
 
-                if (!Animations.AniExitsAnyControl())
+                if (ModAnimation.AniControlEnabled == 0)
                     Change?.Invoke(this, false);
             }
 
             catch (Exception ex)
             {
-                Common.Log(
+                ModBase.Log(
                     ex,
                     "滑动条进度改变出错",
-                    Common.LogLevel.Hint,
+                    ModBase.LogLevel.Hint,
                     userSummary: Lang.Text("Application.Control.Error.OperationFailed"));
             }
         }
@@ -137,12 +136,12 @@ public partial class MySlider
     {
         if (e is not null)
             PanMain.Width = e.NewSize.Width;
-        Animations.AniStop("MySlider Progress " + Uuid);
+        ModAnimation.AniStop("MySlider Progress " + Uuid);
         var newWidth = _Value / (double)MaxValue * (ActualWidth - ShapeDot.Width);
         LineFore.Width = Math.Max(0d, newWidth + (newWidth < 0.5d ? 0d : 0.5d));
         LineBack.Width = Math.Max(0d,
             ActualWidth - ShapeDot.Width - newWidth + (ActualWidth - ShapeDot.Width - newWidth < 0.5d ? 0d : 0.5d));
-        Common.SetLeft(ShapeDot, newWidth);
+        ModBase.SetLeft(ShapeDot, newWidth);
     }
 
     private void DragStart(object sender, MouseButtonEventArgs e)
@@ -150,23 +149,20 @@ public partial class MySlider
         CaptureMouse();
         MouseMove += OnDragMouseMove;
         e.Handled = true; // 防止 ScrollViewer 失焦问题
-        Launcher.dragControl = this;
+        ModMain.dragControl = this;
         RefreshColor();
-        Launcher.frmMain.DragDoing();
-        Animations.AniStart(
-            Animations.AaScaleTransform(ShapeDot,
-                1.3d - ((ScaleTransform)ShapeDot.RenderTransform).ScaleX, 40,
-                ease: new Animations.AniEaseOutFluent()), "MySlider Scale " + Uuid);
+        ModMain.frmMain.DragDoing();
+        ModAnimation.AniStart(
+            ModAnimation.AaScaleTransform(ShapeDot, 1.3d - ((ScaleTransform)ShapeDot.RenderTransform).ScaleX, 40,
+                ease: new ModAnimation.AniEaseOutFluent()), "MySlider Scale " + Uuid);
         RefreshPopup();
-        Animations.AniStop("MySlider KeyPopup " + Uuid);
+        ModAnimation.AniStop("MySlider KeyPopup " + Uuid);
     }
 
     public void DragDoing()
     {
         var percent =
-            Common.MathClamp(
-                (Mouse.GetPosition(PanMain).X - ShapeDot.Width / 2d) /
-                (ActualWidth - ShapeDot.Width), 0d,
+            ModBase.MathClamp((Mouse.GetPosition(PanMain).X - ShapeDot.Width / 2d) / (ActualWidth - ShapeDot.Width), 0d,
                 1d);
         var newValue = (int)Math.Round(percent * MaxValue);
         if (newValue != Value) Value = newValue;
@@ -183,10 +179,9 @@ public partial class MySlider
         MouseMove -= OnDragMouseMove;
         if (IsMouseCaptured) ReleaseMouseCapture();
         RefreshColor();
-        Animations.AniStart(
-            Animations.AaScaleTransform(ShapeDot,
-                1d - ((ScaleTransform)ShapeDot.RenderTransform).ScaleX, 200,
-                ease: new Animations.AniEaseOutFluent()), "MySlider Scale " + Uuid);
+        ModAnimation.AniStart(
+            ModAnimation.AaScaleTransform(ShapeDot, 1d - ((ScaleTransform)ShapeDot.RenderTransform).ScaleX, 200,
+                ease: new ModAnimation.AniEaseOutFluent()), "MySlider Scale " + Uuid);
         Popup.IsOpen = false;
     }
 
@@ -198,7 +193,7 @@ public partial class MySlider
         TextHint.Text = getHintText.DynamicInvoke(Value)?.ToString() ?? "";
         var typeface = new Typeface(TextHint.FontFamily, TextHint.FontStyle, TextHint.FontWeight, TextHint.FontStretch);
         var formattedText = new FormattedText(TextHint.Text, Thread.CurrentThread.CurrentCulture,
-            TextHint.FlowDirection, typeface, TextHint.FontSize, TextHint.Foreground, Common.Dpi);
+            TextHint.FlowDirection, typeface, TextHint.FontSize, TextHint.Foreground, ModBase.dpi);
         TextHint.Width = formattedText.Width; // 使用手动测量的宽度修复 #1057
     }
 
@@ -214,8 +209,7 @@ public partial class MySlider
             int animationTime;
             if (IsEnabled)
             {
-                if ((Launcher.dragControl is not null && Launcher.dragControl.Equals(this)) ||
-                    IsMouseOver)
+                if (ModMain.dragControl is not null && ModMain.dragControl.Equals(this) || IsMouseOver)
                 {
                     foregroundName = "ColorBrush3";
                     dotFillName = "ColorBrush3";
@@ -236,21 +230,20 @@ public partial class MySlider
             }
 
             // 触发颜色动画
-            if (IsLoaded && !Animations.AniExitsAnyControl()) // 防止默认属性变更触发动画
+            if (IsLoaded && ModAnimation.AniControlEnabled == 0) // 防止默认属性变更触发动画
             {
                 // 有动画
-                Animations.AniStart(
+                ModAnimation.AniStart(
                     new[]
                     {
-                        Animations.AaColor(this, BorderBrushProperty, foregroundName,
-                            animationTime),
-                        Animations.AaColor(ShapeDot, Shape.FillProperty, dotFillName, animationTime)
+                        ModAnimation.AaColor(this, BorderBrushProperty, foregroundName, animationTime),
+                        ModAnimation.AaColor(ShapeDot, Shape.FillProperty, dotFillName, animationTime)
                     }, "MySlider Color " + Uuid);
             }
             else
             {
                 // 无动画
-                Animations.AniStop("MySlider Color " + Uuid);
+                ModAnimation.AniStop("MySlider Color " + Uuid);
                 SetResourceReference(BorderBrushProperty, foregroundName);
                 ShapeDot.SetResourceReference(Shape.FillProperty, dotFillName);
             }
@@ -258,7 +251,7 @@ public partial class MySlider
 
         catch (Exception ex)
         {
-            Common.Log(ex, "滑动条颜色改变出错");
+            ModBase.Log(ex, "滑动条颜色改变出错");
         }
     }
 
@@ -270,7 +263,7 @@ public partial class MySlider
     private void MySlider_KeyDown(object sender, KeyEventArgs e)
     {
         // 拒绝一边拖动一边用按键改变
-        if (ReferenceEquals(this, Launcher.dragControl))
+        if (ReferenceEquals(this, ModMain.dragControl))
             return;
         // 改变值
         if (e.Key == Key.Left)
@@ -296,10 +289,9 @@ public partial class MySlider
         if (getHintText is not null)
         {
             RefreshPopup();
-            Animations.AniStop("MySlider KeyPopup " + Uuid);
-            Animations.AniStart(
-                Animations.AaCode(() => Popup.IsOpen = false,
-                    (int)Math.Round(700d * Animations.aniSpeed)),
+            ModAnimation.AniStop("MySlider KeyPopup " + Uuid);
+            ModAnimation.AniStart(
+                ModAnimation.AaCode(() => Popup.IsOpen = false, (int)Math.Round(700d * ModAnimation.aniSpeed)),
                 "MySlider KeyPopup " + Uuid);
         }
     }

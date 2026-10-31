@@ -26,6 +26,39 @@ public class UpdateHelperTest
     public void Cleanup() => Directory.Delete(_directory, recursive: true);
 
     [TestMethod]
+    public void CleanupRetriesLockedSuccessfulBackupAndPreservesFailedBackup()
+    {
+        var stem = Target + ".update." + Guid.NewGuid().ToString("N");
+        var failed = Target + ".update." + Guid.NewGuid().ToString("N") + ".bak";
+        File.WriteAllText(failed, "recovery");
+        File.WriteAllText(stem + ".bak", "completed backup");
+        File.WriteAllText(stem + ".done", UpdateHelper.ComputeSha256(Target));
+        using (var locked = new FileStream(stem + ".bak", FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            UpdateHelper.CleanupCompletedUpdates(Target);
+            Assert.IsTrue(File.Exists(stem + ".done"));
+        }
+        UpdateHelper.CleanupCompletedUpdates(Target);
+        Assert.IsFalse(File.Exists(stem + ".bak"));
+        Assert.IsFalse(File.Exists(stem + ".done"));
+        Assert.AreEqual("recovery", File.ReadAllText(failed));
+    }
+
+    [TestMethod]
+    public void CleanupOnlyRemovesStaleTemporaryFilesOwnedByThisExecutable()
+    {
+        var stale = Target + ".update." + Guid.NewGuid().ToString("N") + ".tmp";
+        var fresh = Target + ".update." + Guid.NewGuid().ToString("N") + ".tmp";
+        var unrelated = Target + ".update.notes.tmp";
+        File.WriteAllText(stale, "stale"); File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-2));
+        File.WriteAllText(fresh, "active"); File.WriteAllText(unrelated, "user file");
+        UpdateHelper.CleanupCompletedUpdates(Target);
+        Assert.IsFalse(File.Exists(stale));
+        Assert.IsTrue(File.Exists(fresh));
+        Assert.IsTrue(File.Exists(unrelated));
+    }
+
+    [TestMethod]
     public void ReplacesExistingExecutableAndVerifiesInstalledHash()
     {
         Assert.IsNull(UpdateHelper.Replace(Source, Target, UpdateHelper.ComputeSha256(Source)));

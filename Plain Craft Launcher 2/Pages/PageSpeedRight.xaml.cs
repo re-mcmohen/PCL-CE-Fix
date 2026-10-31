@@ -1,15 +1,15 @@
 namespace PCL;
 
-public partial class PageSpeedRight : IPageView
+public partial class PageSpeedRight
 {
     public PageSpeedRight()
     {
         InitializeComponent();
+        Loaded += (_, _) => Init();
     }
 
-    public void OnNavigatedTo(object? parameter) => PanBack.ScrollToHome();
-
-    public void OnNavigatedFrom()
+    private void Init()
     {
+        PanBack.ScrollToHome();
     }
 }

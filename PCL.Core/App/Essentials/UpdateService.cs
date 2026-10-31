@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using PCL.Core.App.IoC;
 using PCL.Core.Utils.Exts;
@@ -22,6 +23,15 @@ public sealed class UpdateService : GeneralService
         
         if (args is not ["update", _, _, _, _] and not ["update", _, _, _, _, _])
         {
+            // Retry off the UI thread, including on subsequent ordinary launches.
+            _ = Task.Run(async () =>
+            {
+                for (var attempt = 0; attempt < 10; attempt++)
+                {
+                    UpdateHelper.CleanupCompletedUpdates(Basics.ExecutablePath);
+                    await Task.Delay(2000).ConfigureAwait(false);
+                }
+            });
             switch (args)
             {
                 case ["update_finished", _]:

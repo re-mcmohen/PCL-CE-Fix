@@ -7,10 +7,10 @@ namespace PCL;
 
 public partial class MyCompItem
 {
-    private string _stateLast;
+    private string stateLast;
 
     /// <summary>
-    /// 是否允许交互。目前仅用于 PageDownloadCompDetail 的顶部栏展示：若关闭碰撞检测，则无法展开 Tooltip。
+    ///     是否允许交互。目前仅用于 PageDownloadCompDetail 的顶部栏展示：若关闭碰撞检测，则无法展开 Tooltip。
     /// </summary>
     public bool CanInteraction { get; set; } = true;
 
@@ -23,7 +23,7 @@ public partial class MyCompItem
         int time;
         if (IsMouseOver)
         {
-            if (_isMouseDown)
+            if (isMouseDown)
             {
                 stateNew = "MouseDown";
                 time = 120;
@@ -40,60 +40,57 @@ public partial class MyCompItem
             time = 180;
         }
 
-        if ((_stateLast ?? "") == (stateNew ?? ""))
+        if ((stateLast ?? "") == (stateNew ?? ""))
             return;
-        _stateLast = stateNew;
+        stateLast = stateNew;
         // 触发颜色动画
-        if (IsLoaded && !Animations.AniExitsAnyControl()) // 防止默认属性变更触发动画
+        if (IsLoaded && ModAnimation.AniControlEnabled == 0) // 防止默认属性变更触发动画
         {
             // 有动画
-            var ani = new List<Animations.AniData>();
+            var ani = new List<ModAnimation.AniData>();
             if (IsMouseOver)
             {
                 if (PanButtons is not null && _HasActionButtons)
-                    ani.Add(Animations.AaOpacity(PanButtons, 1d - PanButtons.Opacity,
-                        (int)Math.Round(time * 0.35d),
+                    ani.Add(ModAnimation.AaOpacity(PanButtons, 1d - PanButtons.Opacity, (int)Math.Round(time * 0.35d),
                         (int)Math.Round(time * 0.15d)));
                 ani.AddRange(new[]
                 {
-                    Animations.AaColor(RectBack, Border.BackgroundProperty,
-                        _isMouseDown ? "ColorBrush6" : "ColorBrushBg1", time),
-                    Animations.AaOpacity(RectBack, 1d - RectBack.Opacity, time,
-                        ease: new Animations.AniEaseOutFluent())
+                    ModAnimation.AaColor(RectBack, Border.BackgroundProperty,
+                        isMouseDown ? "ColorBrush6" : "ColorBrushBg1", time),
+                    ModAnimation.AaOpacity(RectBack, 1d - RectBack.Opacity, time,
+                        ease: new ModAnimation.AniEaseOutFluent())
                 });
-                if (_isMouseDown)
-                    ani.Add(Animations.AaScaleTransform(RectBack,
+                if (isMouseDown)
+                    ani.Add(ModAnimation.AaScaleTransform(RectBack,
                         0.996d - ((ScaleTransform)RectBack.RenderTransform).ScaleX, (int)Math.Round(time * 1.2d),
-                        ease: new Animations.AniEaseOutFluent()));
+                        ease: new ModAnimation.AniEaseOutFluent()));
                 else
-                    ani.Add(Animations.AaScaleTransform(RectBack,
+                    ani.Add(ModAnimation.AaScaleTransform(RectBack,
                         1d - ((ScaleTransform)RectBack.RenderTransform).ScaleX, (int)Math.Round(time * 1.2d),
-                        ease: new Animations.AniEaseOutFluent()));
+                        ease: new ModAnimation.AniEaseOutFluent()));
             }
             else
             {
                 if (PanButtons is not null && _HasActionButtons)
-                    ani.Add(Animations.AaOpacity(PanButtons, -PanButtons.Opacity,
-                        (int)Math.Round(time * 0.4d)));
+                    ani.Add(ModAnimation.AaOpacity(PanButtons, -PanButtons.Opacity, (int)Math.Round(time * 0.4d)));
                 ani.AddRange(new[]
                 {
-                    Animations.AaOpacity(RectBack, -RectBack.Opacity, time),
-                    Animations.AaColor(RectBack, Border.BackgroundProperty,
-                        _isMouseDown ? "ColorBrush6" : "ColorBrush7", time),
-                    Animations.AaScaleTransform(RectBack,
-                        0.996d - ((ScaleTransform)RectBack.RenderTransform).ScaleX,
-                        time, ease: new Animations.AniEaseOutFluent()),
-                    Animations.AaScaleTransform(RectBack, -0.196d, 1, after: true)
+                    ModAnimation.AaOpacity(RectBack, -RectBack.Opacity, time),
+                    ModAnimation.AaColor(RectBack, Border.BackgroundProperty,
+                        isMouseDown ? "ColorBrush6" : "ColorBrush7", time),
+                    ModAnimation.AaScaleTransform(RectBack, 0.996d - ((ScaleTransform)RectBack.RenderTransform).ScaleX,
+                        time, ease: new ModAnimation.AniEaseOutFluent()),
+                    ModAnimation.AaScaleTransform(RectBack, -0.196d, 1, after: true)
                 });
             }
 
-            Animations.AniStart(ani, "CompItem Color " + Uuid);
+            ModAnimation.AniStart(ani, "CompItem Color " + Uuid);
         }
         else
         {
             // 无动画
-            Animations.AniStop("CompItem Color " + Uuid);
-            if (_rectBack is not null)
+            ModAnimation.AniStop("CompItem Color " + Uuid);
+            if (_RectBack is not null)
                 RectBack.Opacity = 0d;
             if (PanButtons is not null)
                 PanButtons.Opacity = 0d;
@@ -102,7 +99,7 @@ public partial class MyCompItem
 
     #region 基础属性
 
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     // Logo
     public string Logo
@@ -186,18 +183,38 @@ public partial class MyCompItem
         var typeface = new Typeface(textBlock.FontFamily, textBlock.FontStyle, textBlock.FontWeight,
             textBlock.FontStretch);
         var formattedText = new FormattedText(textBlock.Text, Thread.CurrentThread.CurrentCulture,
-            textBlock.FlowDirection, typeface, textBlock.FontSize, textBlock.Foreground,
-            Common.Dpi);
+            textBlock.FlowDirection, typeface, textBlock.FontSize, textBlock.Foreground, ModBase.dpi);
         return formattedText.Width > textBlock.ActualWidth;
     }
 
     // Tag
     public List<string> Tags
     {
-        set => TagPanelHelper.FillLocalized(
-            PanTags,
-            value,
-            new SolidColorBrush(Color.FromRgb(134, 134, 134)));
+        set
+        {
+            PanTags.Children.Clear();
+            PanTags.Visibility = value.Any() ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var tagText in value)
+            {
+                var newTag = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(17, 0, 0, 0)),
+                    Padding = new Thickness(3d, 1d, 3d, 1d),
+                    CornerRadius = new CornerRadius(3d),
+                    Margin = new Thickness(0d, 0d, 3d, 0d),
+                    SnapsToDevicePixels = true,
+                    UseLayoutRounding = false
+                };
+                var tagTextBlock = new TextBlock
+                {
+                    Text = tagText,
+                    Foreground = new SolidColorBrush(Color.FromRgb(134, 134, 134)),
+                    FontSize = 11d
+                };
+                newTag.Child = tagTextBlock;
+                PanTags.Children.Add(newTag);
+            }
+        }
     }
 
     // ‘收藏按钮
@@ -232,19 +249,19 @@ public partial class MyCompItem
     }
 
     /// <summary>
-    /// 刷新收藏状态（仅更新图标，不影响 hover 展示逻辑）
+    ///     刷新收藏状态（仅更新图标，不影响 hover 展示逻辑）
     /// </summary>
     public void RefreshFavoriteStatus()
     {
-        if (Tag is not Comp.CompProject project) return;
+        if (Tag is not ModComp.CompProject project) return;
 
-        var isFavourite = Comp.CompFavorites.IsFavourite(project.Id);
+        var isFavourite = ModComp.CompFavorites.IsFavourite(project.Id);
         BtnDelete.SvgIcon = isFavourite ? "lucide/heart-filled" : "lucide/heart";
     }
+
     #endregion
+
     #region 点击
-
-
 
     // 触发点击事件
     public event ClickEventHandler? Click;
@@ -253,122 +270,117 @@ public partial class MyCompItem
 
     private void BtnDelete_Click(object sender, EventArgs e)
     {
-        if (PanButtons.Opacity > 0d && Tag is Comp.CompProject)
+        if (PanButtons.Opacity > 0d && Tag is ModComp.CompProject)
         {
-            var project = (Comp.CompProject)Tag;
-            Comp.CompFavorites.ShowMenu(project, (UIElement)sender, () => RefreshFavoriteStatus());
+            var project = (ModComp.CompProject)Tag;
+            ModComp.CompFavorites.ShowMenu(project, (UIElement)sender, () => RefreshFavoriteStatus());
         }
     }
 
     private void _BtnDownload_Click(object sender, EventArgs e)
     {
-        if (PanButtons.Opacity > 0d && Tag is Comp.CompProject project)
-            Comp.QuickDownload(project);
+        if (PanButtons.Opacity > 0d && Tag is ModComp.CompProject project)
+            ModComp.QuickDownload(project);
     }
 
     private void MyCompItem_Click(MyCompItem sender, EventArgs e)
     {
-        // 记录当前展开的卡片标题
         // 记录当前展开的卡片标题（#2712）
         var titles = new List<string>();
-        if (Launcher.frmMain.pageCurrent.page == FormMain.PageType.CompDetail)
+        if (ModMain.frmMain.pageCurrent.page == FormMain.PageType.CompDetail)
         {
-            foreach (MyCard Card in Launcher.frmDownloadCompDetail.PanResults.Children)
-                if (Card.Tag is string cardKey && !string.IsNullOrEmpty(cardKey) && !Card.IsSwapped)
-                    titles.Add(cardKey);
-            Common.Log(
-                $"[Comp] 记录当前已展开的卡片：{string.Join("、", titles.Select(PageDownloadCompDetail.GetVersionGroupTitleForLog))}");
-            var additional = Launcher.frmMain.pageCurrent.additional.Value;
-            Launcher.frmMain.pageCurrent.additional = additional with { ExpandedTitles = titles };
+            foreach (MyCard Card in ModMain.frmDownloadCompDetail.PanResults.Children)
+                if (!string.IsNullOrEmpty(Card.Title) && !Card.IsSwapped)
+                    titles.Add(Card.Title);
+            ModBase.Log("[Comp] 记录当前已展开的卡片：" + string.Join("、", titles));
+            var additional = ModMain.frmMain.pageCurrent.additional.Value;
+            ModMain.frmMain.pageCurrent.additional = additional with { ExpandedTitles = titles };
         }
 
         // 打开详情页
-        var targetType = default(Comp.CompType);
+        var targetType = default(ModComp.CompType);
         string targetVersion = null;
-        var targetLoader = Comp.CompLoaderType.Any;
-        if (Launcher.frmMain.pageCurrent.page == FormMain.PageType.Download)
+        var targetLoader = ModComp.CompLoaderType.Any;
+        if (ModMain.frmMain.pageCurrent.page == FormMain.PageType.Download)
         {
-            if (Launcher.frmMain.PageCurrentSub == FormMain.PageSubType.DownloadCompFavorites)
+            if (ModMain.frmMain.PageCurrentSub == FormMain.PageSubType.DownloadCompFavorites)
             {
                 targetVersion = "";
-                targetLoader = Comp.CompLoaderType.Any;
+                targetLoader = ModComp.CompLoaderType.Any;
             }
             else
             {
                 // 从下载页进入
-                switch (Launcher.frmMain.PageCurrentSub)
+                switch (ModMain.frmMain.PageCurrentSub)
                 {
                     case FormMain.PageSubType.DownloadMod:
                     {
-                        targetType = Comp.CompType.Mod;
-                        targetVersion = Launcher.frmDownloadMod.Content.loader.input.gameVersion;
-                        targetLoader = Launcher.frmDownloadMod.Content.loader.input.modLoader;
+                        targetType = ModComp.CompType.Mod;
+                        targetVersion = ModMain.frmDownloadMod.Content.loader.input.gameVersion;
+                        targetLoader = ModMain.frmDownloadMod.Content.loader.input.modLoader;
                         break;
                     }
                     case FormMain.PageSubType.DownloadPack:
                     {
-                        targetType = Comp.CompType.ModPack;
-                        targetVersion = Launcher.frmDownloadPack.Content.loader.input.gameVersion;
+                        targetType = ModComp.CompType.ModPack;
+                        targetVersion = ModMain.frmDownloadPack.Content.loader.input.gameVersion;
                         break;
                     }
                     case FormMain.PageSubType.DownloadDataPack:
                     {
-                        targetType = Comp.CompType.DataPack;
-                        targetVersion = Launcher.frmDownloadDataPack.Content.loader.input
-                            .gameVersion;
+                        targetType = ModComp.CompType.DataPack;
+                        targetVersion = ModMain.frmDownloadDataPack.Content.loader.input.gameVersion;
                         break;
                     }
                     case FormMain.PageSubType.DownloadResourcePack:
                     {
-                        targetType = Comp.CompType.ResourcePack;
-                        targetVersion = Launcher.frmDownloadResourcePack.Content.loader.input
-                            .gameVersion;
+                        targetType = ModComp.CompType.ResourcePack;
+                        targetVersion = ModMain.frmDownloadResourcePack.Content.loader.input.gameVersion;
                         break;
                     }
                     case FormMain.PageSubType.DownloadShader:
                     {
-                        targetType = Comp.CompType.Shader;
-                        targetVersion = Launcher.frmDownloadShader.Content.loader.input.gameVersion;
+                        targetType = ModComp.CompType.Shader;
+                        targetVersion = ModMain.frmDownloadShader.Content.loader.input.gameVersion;
                         break;
                     }
                     case FormMain.PageSubType.DownloadWorld:
                     {
-                        targetType = Comp.CompType.World;
-                        targetVersion = Launcher.frmDownloadWorld.Content.loader.input.gameVersion;
+                        targetType = ModComp.CompType.World;
+                        targetVersion = ModMain.frmDownloadWorld.Content.loader.input.gameVersion;
                         break;
                     }
                 }
             }
         }
-        else if (Launcher.frmMain.pageCurrent.page == FormMain.PageType.InstanceSetup)
+        else if (ModMain.frmMain.pageCurrent.page == FormMain.PageType.InstanceSetup)
         {
             // 从实例设置页进入（查看整合包信息）
-            targetType = Comp.CompType.ModPack;
+            targetType = ModComp.CompType.ModPack;
         }
         else
         {
             // 从详情页进入（查看前置）
-            targetType = Comp.CompType.Any; // 允许任意类别
-            var additional = Launcher.frmMain.pageCurrent.additional.Value;
+            targetType = ModComp.CompType.Any; // 允许任意类别
+            var additional = ModMain.frmMain.pageCurrent.additional.Value;
             targetVersion = additional.TargetVersion;
             targetLoader = additional.TargetLoader;
         }
 
-        Launcher.frmMain.PageChange(new FormMain.PageStackData
+        ModMain.frmMain.PageChange(new FormMain.PageStackData
         {
             page = FormMain.PageType.CompDetail,
-            additional = ((Comp.CompProject)sender.Tag, new List<string>(), targetVersion,
-                targetLoader, targetType, null)
+            additional = ((ModComp.CompProject)sender.Tag, new List<string>(), targetVersion, targetLoader, targetType, null)
         });
     }
 
     // 鼠标点击判定
-    private bool _isMouseDown;
+    private bool isMouseDown;
 
     // 触发点击事件
     private void Button_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (!_isMouseDown)
+        if (!isMouseDown)
             return;
         Click?.Invoke(sender, e);
     }
@@ -397,12 +409,12 @@ public partial class MyCompItem
             isClickOnLabInfo = labInfoBounds.Contains(clickPosition);
         }
 
-        if (IsMouseDirectlyOver || isClickOnLabInfo) _isMouseDown = true;
+        if (IsMouseDirectlyOver || isClickOnLabInfo) isMouseDown = true;
     }
 
     private void Button_MouseLeave(object sender, object e)
     {
-        _isMouseDown = false;
+        isMouseDown = false;
     }
 
     // 判断点击是否落在某个操作按钮（收藏 / 下载）上
@@ -410,19 +422,20 @@ public partial class MyCompItem
     {
         if (button is null || button.Visibility != Visibility.Visible) return false;
         var bounds = new Rect(button.TranslatePoint(new Point(0d, 0d), this), button.RenderSize);
-    #endregion
-    #region 后加载指向背景
         return bounds.Contains(clickPosition);
     }
 
+    #endregion
 
-    private Border _rectBack;
+    #region 后加载指向背景
+
+    private Border _RectBack;
 
     public Border RectBack
     {
         get
         {
-            if (_rectBack is null)
+            if (_RectBack is null)
             {
                 var rect = new Border
                 {
@@ -430,7 +443,7 @@ public partial class MyCompItem
                     CornerRadius = new CornerRadius(3d),
                     RenderTransform = new ScaleTransform(0.8d, 0.8d),
                     RenderTransformOrigin = new Point(0.5d, 0.5d),
-                    BorderThickness = new Thickness(Common.GetWpfSize(1d)),
+                    BorderThickness = new Thickness(ModBase.GetWPFSize(1d)),
                     SnapsToDevicePixels = true,
                     IsHitTestVisible = false,
                     Opacity = 0d
@@ -440,15 +453,15 @@ public partial class MyCompItem
                 SetColumnSpan(rect, 999);
                 SetRowSpan(rect, 999);
                 Children.Insert(0, rect);
-                _rectBack = rect;
-                // <!--<corelocal:BlurBorder x:Name = "RectBack" CornerRadius="3" RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="True"
-                // IsHitTestVisible = "False" Opacity="0" BorderThickness="1"
+                _RectBack = rect;
+                // <!--<corelocal:BlurBorder x:Name = "RectBack" CornerRadius="3" RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="True" 
+                // IsHitTestVisible = "False" Opacity="0" BorderThickness="1" 
                 // Grid.ColumnSpan = "4" Background="{DynamicResource ColorBrush7}" BorderBrush="{DynamicResource ColorBrush6}"/>-->
             }
-    #endregion
 
-            return _rectBack;
+            return _RectBack;
         }
     }
 
+    #endregion
 }

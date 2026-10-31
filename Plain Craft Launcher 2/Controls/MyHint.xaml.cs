@@ -38,7 +38,7 @@ public partial class MyHint
 
     // 触发点击事件
     private bool isMouseDown;
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     public MyHint()
     {
@@ -59,8 +59,7 @@ public partial class MyHint
         set
         {
             if (value)
-                BorderThickness = new Thickness(3d, Common.GetWpfSize(1d), Common.GetWpfSize(1d),
-                    Common.GetWpfSize(1d));
+                BorderThickness = new Thickness(3d, ModBase.GetWPFSize(1d), ModBase.GetWPFSize(1d), ModBase.GetWPFSize(1d));
             else
                 BorderThickness = new Thickness(3d, 0d, 0d, 0d);
         }
@@ -124,10 +123,10 @@ public partial class MyHint
         }
 
         var s = ThemeService.CurrentTone;
-        Background = new Common.MyColor().FromHsl2(hue, 90, s.L7 * 100);
-        BorderBrush = new Common.MyColor().FromHsl2(hue, 90, s.L2 * 100);
-        LabText.Foreground = new Common.MyColor().FromHsl2(hue, 90, s.L2 * 100);
-        BtnClose.Foreground = new Common.MyColor().FromHsl2(hue, 90, s.L2 * 100);
+        Background = new ModBase.MyColor().FromHSL2(hue, 90, s.L7 * 100);
+        BorderBrush = new ModBase.MyColor().FromHSL2(hue, 90, s.L2 * 100);
+        LabText.Foreground = new ModBase.MyColor().FromHSL2(hue, 90, s.L2 * 100);
+        BtnClose.Foreground = new ModBase.MyColor().FromHSL2(hue, 90, s.L2 * 100);
 
         // 根据提示气泡对齐方向刷新边框
         // 此处依赖 HasBorder 的副作用进行范围检查
@@ -145,7 +144,7 @@ public partial class MyHint
     {
         if (ConfigService.TryGetConfigItemNoType(RelativeSetup, out var item))
             item.SetValueNoType(true);
-        Animations.AniDispose(this, false);
+        ModAnimation.AniDispose(this, false);
     }
 
     private void MyHint_MouseUp(object sender, MouseButtonEventArgs e)
@@ -153,9 +152,9 @@ public partial class MyHint
         if (!isMouseDown)
             return;
         isMouseDown = false;
-        Common.Log("[Control] 按下提示条" + (string.IsNullOrEmpty(Name) ? "" : "：" + Name));
+        ModBase.Log("[Control] 按下提示条" + (string.IsNullOrEmpty(Name) ? "" : "：" + Name));
         e.Handled = true;
-        Launcher.RaiseCustomEvent(this);
+        ModMain.RaiseCustomEvent(this);
     }
 
     private void MyHint_MouseDown(object sender, MouseButtonEventArgs e)
@@ -179,7 +178,7 @@ public partial class MyHint
     }
 }
 
-public static partial class Animations
+public static partial class ModAnimation
 {
     public static void AniDispose(MyHint control, bool removeFromChildren, ParameterizedThreadStart callBack = null)
     {

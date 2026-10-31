@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Markup;
 using PCL.Core.App.Localization;
-using PCL.Core.Utils;
 
 namespace PCL;
 
@@ -17,45 +16,63 @@ public partial class PageComp
 
     public int page;
 
-    public Comp.CompProjectStorage storage = new();
-
-    private readonly PageCompViewModel _vm = new();
-
-    public PageCompViewModel ViewModel => _vm;
+    public ModComp.CompProjectStorage storage = new();
 
     // 结果 UI 化
-    private void Load_OnFinish(bool scrollToTop = true)
+    private void Load_OnFinish()
     {
         try
         {
-            Common.Log($"[Comp] 开始可视化{TypeNameSpaced}列表，已储藏 {storage.results.Count} 个结果，当前在第 {page + 1} 页");
+            ModBase.Log($"[Comp] 开始可视化{TypeNameSpaced}列表，已储藏 {storage.results.Count} 个结果，当前在第 {page + 1} 页");
             // 列表项
             PanProjects.Children.Clear();
             var index = Math.Min(page * pageSize, storage.results.Count - 1);
             foreach (var result in storage.results.GetRange(index, Math.Min(storage.results.Count - index, pageSize)))
             {
-                var showQuickDownload = result.Type != Comp.CompType.ModPack &&
-                                        result.Type != Comp.CompType.DataPack;
+                var showQuickDownload = result.Type != ModComp.CompType.ModPack &&
+                                        result.Type != ModComp.CompType.DataPack;
                 PanProjects.Children.Add(result.ToCompItem(loader.input.gameVersion is null,
-                    loader.input.modLoader == Comp.CompLoaderType.Any &&
-                    (PageType == Comp.CompType.Mod || PageType == Comp.CompType.ModPack),
+                    loader.input.modLoader == ModComp.CompLoaderType.Any &&
+                    (PageType == ModComp.CompType.Mod || PageType == ModComp.CompType.ModPack),
                     showQuickDownload));
             }
             // 页码
-            _vm.ApplyPagerState(page, storage);
+            CardPages.Visibility =
+                storage.results.Count > 40 || storage.curseForgeOffset < storage.curseForgeTotal ||
+                storage.modrinthOffset < storage.modrinthTotal
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            LabPage.Text = Lang.Number(page + 1, "N0");
+            BtnPageFirst.IsEnabled = page > 1;
+            BtnPageFirst.Opacity = page > 1 ? 1d : 0.2d;
+            BtnPageLeft.IsEnabled = page > 0;
+            BtnPageLeft.Opacity = page > 0 ? 1d : 0.2d;
+            var isRightEnabled = storage.results.Count > pageSize * (page + 1) ||
+                                 storage.curseForgeOffset < storage.curseForgeTotal ||
+                                 storage.modrinthOffset <
+                                 storage.modrinthTotal; // 由于 WPF 的未知 bug，读取到的 IsEnabled 可能是错误的值（#3319）
+            BtnPageRight.IsEnabled = isRightEnabled;
+            BtnPageRight.Opacity = isRightEnabled ? 1d : 0.2d;
             // 错误信息
-            _vm.ApplyErrorState(storage);
+            if (storage.errorMessage is null)
+            {
+                HintError.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                HintError.Visibility = Visibility.Visible;
+                HintError.Text = storage.errorMessage;
+            }
 
             // 强制返回顶部
-            if (scrollToTop)
-                ScrollToTop();
+            ScrollToTop();
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 $"可视化{TypeNameSpaced}列表出错",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Download.Comp.Error.OperationFailed"));
         }
     }
@@ -65,14 +82,14 @@ public partial class PageComp
     {
         switch (loader.State)
         {
-            case Common.LoadState.Failed:
+            case ModBase.LoadState.Failed:
             {
                 var errorMessage = "";
                 if (loader.Error is not null)
                     errorMessage = loader.Error.Message;
-                if (loader.Error is InvalidJsonException)
+                if (errorMessage.Contains(Lang.Text("Common.Error.InvalidJson")))
                 {
-                    Common.Log($"[Download] 下载的{TypeNameSpaced}列表 json 文件损坏，已自动重试", Common.LogLevel.Debug);
+                    ModBase.Log($"[Download] 下载的{TypeNameSpaced}列表 json 文件损坏，已自动重试", ModBase.LogLevel.Debug);
                     ((MyPageRight)Parent).PageLoaderRestart();
                 }
 
@@ -101,12 +118,12 @@ public partial class PageComp
     {
         CardPages.IsEnabled = false;
         page = newPage;
-        Launcher.frmMain.BackToTop();
-        Common.Log($"[Download] {TypeName}：切换到第 {page + 1} 页");
-        Common.RunInThread(() =>
+        ModMain.frmMain.BackToTop();
+        ModBase.Log($"[Download] {TypeName}：切换到第 {page + 1} 页");
+        ModBase.RunInThread(() =>
         {
             Thread.Sleep(100); // 等待向上滚的动画结束
-            Common.RunInUi(() => CardPages.IsEnabled = true);
+            ModBase.RunInUi(() => CardPages.IsEnabled = true);
             loader.Start();
         });
     }
@@ -114,7 +131,7 @@ public partial class PageComp
     // 安装已有整合包按钮
     private void BtnSearchInstallModPack_Click(object sender, EventArgs e)
     {
-        Modpack.ModpackInstall();
+        ModModpack.ModpackInstall();
     }
 
     /// <summary>
@@ -130,7 +147,7 @@ public partial class PageComp
         }
         catch (Exception ex)
         {
-            Common.Log(ex, "刷新收藏状态时出错");
+            ModBase.Log(ex, "刷新收藏状态时出错");
         }
     }
 
@@ -142,8 +159,7 @@ public partial class PageComp
     public ItemCollection SearchTags => ComboSearchTag.Items;
 
     public static readonly DependencyProperty SupportCurseForgeProperty =
-        DependencyProperty.Register("SupportCurseForge", typeof(bool), typeof(PageComp),
-            new PropertyMetadata(true, OnSupportCurseForgeChanged));
+        DependencyProperty.Register("SupportCurseForge", typeof(bool), typeof(PageComp), new PropertyMetadata(true));
 
     public bool SupportCurseForge
     {
@@ -152,8 +168,7 @@ public partial class PageComp
     }
 
     public static readonly DependencyProperty SupportModrinthProperty =
-        DependencyProperty.Register("SupportModrinth", typeof(bool), typeof(PageComp),
-            new PropertyMetadata(true, OnSupportModrinthChanged));
+        DependencyProperty.Register("SupportModrinth", typeof(bool), typeof(PageComp), new PropertyMetadata(true));
 
     public bool SupportModrinth
     {
@@ -161,16 +176,10 @@ public partial class PageComp
         set => SetValue(SupportModrinthProperty, value);
     }
 
-    private static void OnSupportCurseForgeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        => ((PageComp)d)._vm.SupportCurseForge = (bool)e.NewValue;
-
-    private static void OnSupportModrinthChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        => ((PageComp)d)._vm.SupportModrinth = (bool)e.NewValue;
-
     /// <summary>
     ///     英文前后不含空格的可读资源类型名，例如 "Mod"、"整合包"。
     /// </summary>
-    public string TypeName => Comp.GetCompTypeName(PageType);
+    public string TypeName => ModComp.GetCompTypeName(PageType);
 
     /// <summary>
     ///     英文前后含一个空格的可读资源类型名，例如 " Mod "、"整合包"。
@@ -180,7 +189,7 @@ public partial class PageComp
     /// <summary>
     ///     该页面对应的资源类型。
     /// </summary>
-    public Comp.CompType PageType
+    public ModComp.CompType PageType
     {
         get => field;
         set
@@ -188,20 +197,13 @@ public partial class PageComp
             if (field == value)
                 return;
             field = value;
-            _vm.IsInstallModPackVisible = value == Comp.CompType.ModPack;
-            _pageType = value;
+            BtnSearchInstallModPack.Visibility =
+                value == ModComp.CompType.ModPack ? Visibility.Visible : Visibility.Collapsed;
             loader.name = Lang.Text("Download.Comp.List.Source.ResourceFetch", TypeName);
-            LocalizedText.TryBind(PanSearchBox, "HintText",
-                () => Lang.Text(Comp.GetCompSearchKey(_pageType)));
-            LocalizedText.TryBind(Load, "Text",
-                () => Lang.Text(Comp.GetCompLoadingKey(_pageType)));
+            PanSearchBox.HintText = ModComp.GetCompSearchName(value);
+            Load.Text = ModComp.GetCompLoadingName(value);
         }
-    } = (Comp.CompType)(-1);
-
-    /// <summary>
-    ///     当前资源类型的副本。绑定委托需要在语言变更后读取最新值，因此单独保存一份。
-    /// </summary>
-    private Comp.CompType _pageType = (Comp.CompType)(-1);
+    } = (ModComp.CompType)(-1);
 
     #endregion
 
@@ -213,18 +215,17 @@ public partial class PageComp
     public static McInstance targetVersion;
 
     // 在点击 MyCompItem 时会获取 Loader 的输入，以使资源详情页面可以应用相同的筛选项
-    public Loading.LoaderTask<Comp.CompProjectRequest, int> loader;
+    public ModLoader.LoaderTask<ModComp.CompProjectRequest, int> loader;
 
     private bool isLoaderInited;
 
     public PageComp()
     {
-        loader = new Loading.LoaderTask<Comp.CompProjectRequest, int>(Lang.Text("Download.Comp.List.Source.ResourceFetch", "XXX"), Comp.CompProjectsGet,
-            inputDelegate: LoaderInput) { reloadTimeout = 60 * 1000 };
+        loader = new ModLoader.LoaderTask<ModComp.CompProjectRequest, int>(Lang.Text("Download.Comp.List.Source.ResourceFetch", "XXX"), ModComp.CompProjectsGet,
+            LoaderInput) { reloadTimeout = 60 * 1000 };
         Loaded += PageCompControls_Inited;
         IsVisibleChanged += PageComp_IsVisibleChanged;
         InitializeComponent();
-        DataContext = _vm;
         Load.StateChanged += Load_State;
         BtnPageFirst.Click += BtnPageFirst_Click;
         BtnPageLeft.Click += BtnPageLeft_Click;
@@ -234,23 +235,7 @@ public partial class PageComp
         TextSearchVersion.KeyDown += EnterTrigger;
         BtnSearchReset.Click += (_, _) => ResetFilter();
         BtnSearchInstallModPack.Click += BtnSearchInstallModPack_Click;
-        // PageComp 是 MyPageRight 的子控件而非页面本身，无法通过 MyPageRight 的刷新钩子感知语言变更，
-        // 因此在重新挂载到可视树时自行检查并重建卡片（标签、版本描述等文本按新语言重新求值）。
-        Loaded += (_, _) =>
-        {
-            if (_localizationRevision == LocalizationService.UiRevision)
-                return;
-            _localizationRevision = LocalizationService.UiRevision;
-            if (storage.results.Count == 0)
-                return;
-            // 重建会清空列表，先记下滚动位置以免跳回顶部
-            var savedOffset = VerticalOffset;
-            Load_OnFinish(false);
-            Dispatcher.BeginInvoke(new Action(() => ScrollToVerticalOffset(savedOffset)));
-        };
     }
-
-    private int _localizationRevision = LocalizationService.UiRevision;
 
     private void PageCompControls_Inited(object sender, EventArgs e)
     {
@@ -291,22 +276,22 @@ public partial class PageComp
         ((MyPageRight)Parent).PageLoaderInit(Load, PanLoad, PanContent, PanAlways, loader, _ => Load_OnFinish(),
             LoaderInput);
         // 将最高 Drop 加入筛选
-        if (GameDownload.AllDrops is not null && GameDownload.AllDrops.Count != 0 && GameDownload.AllDrops.First() > 250)
+        if (ModDownload.AllDrops is not null && ModDownload.AllDrops.Count != 0 && ModDownload.AllDrops.First() > 250)
         {
-            var highestVersion = McInstanceInfo.DropToVersion(GameDownload.AllDrops.First());
+            var highestVersion = McInstanceInfo.DropToVersion(ModDownload.AllDrops.First());
             if ((((MyComboBoxItem)TextSearchVersion.Items[1]).Content.ToString() ?? "") !=
                 (highestVersion ?? "")) // 0 是全部
                 TextSearchVersion.Items.Insert(1, new MyComboBoxItem { Content = highestVersion });
         }
 
         // 根据页面类型控制加载器选择的显示
-        if (PageType == Comp.CompType.Shader)
+        if (PageType == ModComp.CompType.Shader)
         {
             LabLoader.Visibility = Visibility.Visible;
             ComboSearchLoader.Visibility = Visibility.Collapsed;
             ComboSearchShaderLoader.Visibility = Visibility.Visible;
         }
-        else if (PageType == Comp.CompType.Mod || PageType == Comp.CompType.ModPack)
+        else if (PageType == ModComp.CompType.Mod || PageType == ModComp.CompType.ModPack)
         {
             LabLoader.Visibility = Visibility.Visible;
             ComboSearchLoader.Visibility = Visibility.Visible;
@@ -326,22 +311,20 @@ public partial class PageComp
         if (IsVisible) RefreshAllFavoriteStatus();
     }
 
-    private Comp.CompProjectRequest LoaderInput()
+    private ModComp.CompProjectRequest LoaderInput()
     {
-        var request = new Comp.CompProjectRequest(PageType, storage, (page + 1) * pageSize);
-        var gameVersion = TextSearchVersion.SelectedIndex == 0
-            ? null
-            : TextSearchVersion.Text.Contains('.') || TextSearchVersion.Text.Contains('w')
-                ? TextSearchVersion.Text
-                : null;
-        var modLoader = Comp.CompLoaderType.Any;
-        if (PageType == Comp.CompType.Mod || PageType == Comp.CompType.ModPack) // 只有 Mod 考虑加载器
+        var request = new ModComp.CompProjectRequest(PageType, storage, (page + 1) * pageSize);
+        var gameVersion = TextSearchVersion.Text == Lang.Text("Download.Comp.Filter.Version.AllInputAvailable") ? null :
+            TextSearchVersion.Text.Contains(".") || TextSearchVersion.Text.Contains("w") ? TextSearchVersion.Text :
+            null;
+        var modLoader = ModComp.CompLoaderType.Any;
+        if (PageType == ModComp.CompType.Mod || PageType == ModComp.CompType.ModPack) // 只有 Mod 考虑加载器
         {
-            modLoader = (Comp.CompLoaderType)Common.Val(((MyComboBoxItem)ComboSearchLoader.SelectedItem).Tag);
-            if (gameVersion is not null && gameVersion.Contains(".") && Common.Val(gameVersion.Split(".")[1]) < 14d &&
-                modLoader == Comp.CompLoaderType.Forge) // 1.14-
+            modLoader = (ModComp.CompLoaderType)ModBase.Val(((MyComboBoxItem)ComboSearchLoader.SelectedItem).Tag);
+            if (gameVersion is not null && gameVersion.Contains(".") && ModBase.Val(gameVersion.Split(".")[1]) < 14d &&
+                modLoader == ModComp.CompLoaderType.Forge) // 1.14-
                                                            // 选择了 Forge
-                modLoader = Comp.CompLoaderType.Any; // 此时，视作没有筛选 Mod Loader（因为部分老 Mod 没有设置自己支持的加载器）
+                modLoader = ModComp.CompLoaderType.Any; // 此时，视作没有筛选 Mod Loader（因为部分老 Mod 没有设置自己支持的加载器）
         }
 
         request.searchText = PanSearchBox.Text;
@@ -349,17 +332,17 @@ public partial class PageComp
         var selectedTag = (ComboSearchTag.SelectedItem as FrameworkElement)?.Tag?.ToString();
         var loaderTag = (ComboSearchShaderLoader.SelectedItem as FrameworkElement)?.Tag?.ToString();
 
-        request.tag = PageType == Comp.CompType.Shader
+        request.tag = PageType == ModComp.CompType.Shader
             ? string.IsNullOrEmpty(loaderTag)
                 ? selectedTag
                 : selectedTag + loaderTag
             : selectedTag;
         request.modLoader =
-            (Comp.CompLoaderType)(PageType == Comp.CompType.Mod || PageType == Comp.CompType.ModPack
-                ? Common.Val(((MyComboBoxItem)ComboSearchLoader.SelectedItem).Tag)
-                : (double)Comp.CompLoaderType.Any);
-        request.source = (Comp.CompSourceType)Common.Val(((MyComboBoxItem)ComboSearchSource.SelectedItem).Tag);
-        request.sort = (Comp.CompSortType)Common.Val(((MyComboBoxItem)ComboSearchSort.SelectedItem).Tag);
+            (ModComp.CompLoaderType)(PageType == ModComp.CompType.Mod || PageType == ModComp.CompType.ModPack
+                ? ModBase.Val(((MyComboBoxItem)ComboSearchLoader.SelectedItem).Tag)
+                : (double)ModComp.CompLoaderType.Any);
+        request.source = (ModComp.CompSourceType)ModBase.Val(((MyComboBoxItem)ComboSearchSource.SelectedItem).Tag);
+        request.sort = (ModComp.CompSortType)ModBase.Val(((MyComboBoxItem)ComboSearchSort.SelectedItem).Tag);
         return request;
     }
 
@@ -373,7 +356,7 @@ public partial class PageComp
         page = 0;
         object argInput = LoaderInput();
         if (loader.ShouldStart(ref argInput))
-            storage = new Comp.CompProjectStorage(); // 避免连续搜索两次使得 CompProjectStorage 引用丢失（#1311）
+            storage = new ModComp.CompProjectStorage(); // 避免连续搜索两次使得 CompProjectStorage 引用丢失（#1311）
         loader.Start();
     }
 
@@ -387,6 +370,7 @@ public partial class PageComp
     private void ResetFilter()
     {
         PanSearchBox.Text = "";
+        TextSearchVersion.Text = Lang.Text("Download.Comp.Filter.Version.AllInputAvailable");
         TextSearchVersion.SelectedIndex = 0;
         ComboSearchSource.SelectedIndex = 0;
         ComboSearchTag.SelectedIndex = 0;

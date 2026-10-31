@@ -14,7 +14,7 @@ public sealed class CrashAnalyzer
 
     public CrashAnalyzer(int uUid)
     {
-        var tempFolder = Launcher.RequestTaskTempFolder();
+        var tempFolder = ModMain.RequestTaskTempFolder();
         Directory.CreateDirectory(Path.Combine(tempFolder, "Temp"));
         Directory.CreateDirectory(Path.Combine(tempFolder, "Report"));
 

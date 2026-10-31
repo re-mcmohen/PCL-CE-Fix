@@ -18,13 +18,13 @@ public static class AnnouncementService
             .Where(x => !showedAnnounced.Contains(x.Id))
             .ToList();
 
-        Common.Log("[System] 需要展示的公告数量：" + showAnnounce.Count);
+        ModBase.Log("[System] 需要展示的公告数量：" + showAnnounce.Count);
 
-        Common.RunInNewThread(() =>
+        ModBase.RunInNewThread(() =>
         {
             foreach (var item in showAnnounce)
             {
-                Launcher.MyMsgBox(item.Detail, item.Title,
+                ModMain.MyMsgBox(item.Detail, item.Title,
                     item.Btn1 is null ? "" : item.Btn1.Text,
                     item.Btn2 is null ? "" : item.Btn2.Text,
                     Lang.Text("Common.Action.Close"),

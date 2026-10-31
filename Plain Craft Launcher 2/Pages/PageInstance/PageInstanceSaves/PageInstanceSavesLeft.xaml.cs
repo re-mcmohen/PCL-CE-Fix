@@ -1,6 +1,7 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using PCL.Core.App.Localization;
 
 namespace PCL;
 
@@ -8,22 +9,8 @@ public partial class PageInstanceSavesLeft : IRefreshable
 {
     public static string currentSave;
 
-    private readonly PageInstanceSavesLeftViewModel _vm = new();
+    // 初始化
     private bool isLoad;
-
-    public FormMain.PageSubType pageID = FormMain.PageSubType.Default;
-
-    public PageInstanceSavesLeft()
-    {
-        InitializeComponent();
-        DataContext = _vm;
-        Loaded += Page_Loaded;
-        ItemInfo.Check += PageCheck;
-        ItemDatapack.Check += PageCheck;
-        BtnOpenFolder.Click += BtnOpenFolder_Click;
-    }
-
-    public PageInstanceSavesLeftViewModel ViewModel => _vm;
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
@@ -35,13 +22,32 @@ public partial class PageInstanceSavesLeft : IRefreshable
     private void BtnOpenFolder_Click(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        PageInstanceSavesLeftViewModel.OpenSaveFolder(currentSave);
+        ModBase.OpenExplorer($@"{currentSave}\");
     }
 
-    private void PageCheck(object sender, Common.RouteEventArgs e)
+    #region 龙猫牌 页面管理
+
+    /// <summary>
+    ///     当前页面的编号。从 0 开始计算。
+    /// </summary>
+    public FormMain.PageSubType pageID = FormMain.PageSubType.Default;
+
+    public PageInstanceSavesLeft()
+    {
+        InitializeComponent();
+        Loaded += Page_Loaded;
+        ItemInfo.Check += PageCheck;
+        ItemDatapack.Check += PageCheck;
+        BtnOpenFolder.Click += BtnOpenFolder_Click;
+    }
+
+    /// <summary>
+    ///     勾选事件改变页面。
+    /// </summary>
+    private void PageCheck(object sender, ModBase.RouteEventArgs e)
     {
         if (sender is MyListItem item && item.Tag is not null)
-            PageChange((FormMain.PageSubType)Common.Val(item.Tag));
+            PageChange((FormMain.PageSubType)ModBase.Val(item.Tag));
     }
 
     public object PageGet(FormMain.PageSubType id = FormMain.PageSubType.Default)
@@ -52,29 +58,32 @@ public partial class PageInstanceSavesLeft : IRefreshable
         {
             case FormMain.PageSubType.VersionSavesInfo:
             {
-                if (Launcher.frmInstanceSavesInfo is null)
-                    Launcher.frmInstanceSavesInfo = new PageInstanceSavesInfo();
-                return Launcher.frmInstanceSavesInfo;
+                if (ModMain.frmInstanceSavesInfo is null)
+                    ModMain.frmInstanceSavesInfo = new PageInstanceSavesInfo();
+                return ModMain.frmInstanceSavesInfo;
             }
             case FormMain.PageSubType.VersionSavesDatapack:
             {
-                if (Launcher.frmInstanceSavesDatapack is null)
-                    Launcher.frmInstanceSavesDatapack = new PageInstanceSavesDatapack();
-                return Launcher.frmInstanceSavesDatapack;
+                if (ModMain.frmInstanceSavesDatapack is null)
+                    ModMain.frmInstanceSavesDatapack = new PageInstanceSavesDatapack();
+                return ModMain.frmInstanceSavesDatapack;
             }
 
             default:
             {
-                throw new Exception(PageInstanceSavesLeftViewModel.GetUnknownSubPageMessage(id));
+                throw new Exception(Lang.Text("Instance.Saves.Left.UnknownSubPage", (int)id));
             }
         }
     }
 
+    /// <summary>
+    ///     切换现有页面。
+    /// </summary>
     public void PageChange(FormMain.PageSubType id)
     {
         if (pageID == id)
             return;
-        Animations.AniBeginControl();
+        ModAnimation.AniControlEnabled += 1;
         try
         {
             PageChangeRun((MyPageRight)PageGet(id));
@@ -82,49 +91,50 @@ public partial class PageInstanceSavesLeft : IRefreshable
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
-                PageInstanceSavesLeftViewModel.GetSwitchFailedMessage(id),
-                Common.LogLevel.Feedback,
-                userSummary: PageInstanceSavesLeftViewModel.GetSwitchFailedMessage(id));
+                Lang.Text("Instance.Saves.Left.SwitchFailed", (int)id),
+                ModBase.LogLevel.Feedback,
+                userSummary: Lang.Text("Instance.Saves.Left.SwitchFailed", (int)id));
         }
         finally
         {
-            Animations.AniEndControl();
+            ModAnimation.AniControlEnabled -= 1;
         }
     }
 
     private static void PageChangeRun(MyPageRight target)
     {
-        Animations.AniStop("FrmMain PageChangeRight");
+        ModAnimation.AniStop("FrmMain PageChangeRight"); // 停止主页面的右页面切换动画，防止它与本动画一起触发多次 PageOnEnter
         if (target.Parent is not null)
             target.SetValue(ContentPresenter.ContentProperty, null);
-        Launcher.frmMain.pageRight = target;
-        ((MyPageRight)Launcher.frmMain.PanMainRight.Child).PageOnExit();
-        Animations.AniStart(new[]
+        ModMain.frmMain.pageRight = target;
+        ((MyPageRight)ModMain.frmMain.PanMainRight.Child).PageOnExit();
+        ModAnimation.AniStart(new[]
         {
-            Animations.AaCode(() =>
+            ModAnimation.AaCode(() =>
             {
-                ((MyPageRight)Launcher.frmMain.PanMainRight.Child).PageOnForceExit();
-                Launcher.frmMain.PanMainRight.Child = Launcher.frmMain.pageRight;
-                Launcher.frmMain.pageRight.Opacity = 0d;
+                ((MyPageRight)ModMain.frmMain.PanMainRight.Child).PageOnForceExit();
+                ModMain.frmMain.PanMainRight.Child = ModMain.frmMain.pageRight;
+                ModMain.frmMain.pageRight.Opacity = 0d;
             }, 130),
-            Animations.AaCode(() =>
+            ModAnimation.AaCode(() =>
             {
-                Launcher.frmMain.pageRight.Opacity = 1d;
-                Launcher.frmMain.pageRight.PageOnEnter();
+                // 延迟触发页面通用动画，以使得在 Loaded 事件中加载的控件得以处理
+                ModMain.frmMain.pageRight.Opacity = 1d;
+                ModMain.frmMain.pageRight.PageOnEnter();
             }, 30, true)
         }, "PageLeft PageChange");
     }
 
-    public void RefreshButton_Click(object sender, EventArgs e)
+    public void RefreshButton_Click(object sender, EventArgs e) // 由边栏按钮匿名调用
     {
-        Refresh((FormMain.PageSubType)Common.Val(((MyIconButton)sender).Tag));
+        Refresh((FormMain.PageSubType)ModBase.Val(((MyIconButton)sender).Tag));
     }
 
     public void Refresh()
     {
-        Refresh(Launcher.frmMain.PageCurrentSub);
+        Refresh(ModMain.frmMain.PageCurrentSub);
     }
 
     public void Refresh(FormMain.PageSubType subType)
@@ -133,10 +143,10 @@ public partial class PageInstanceSavesLeft : IRefreshable
         {
             case FormMain.PageSubType.VersionSavesDatapack:
             {
-                if (Launcher.frmInstanceSavesDatapack is null)
-                    Launcher.frmInstanceSavesDatapack = new PageInstanceSavesDatapack();
+                if (ModMain.frmInstanceSavesDatapack is null)
+                    ModMain.frmInstanceSavesDatapack = new PageInstanceSavesDatapack();
                 if (ItemDatapack.Checked)
-                    Launcher.frmInstanceSavesDatapack.Refresh();
+                    ModMain.frmInstanceSavesDatapack.Refresh();
                 else
                     ItemDatapack.Checked = true;
 
@@ -144,6 +154,8 @@ public partial class PageInstanceSavesLeft : IRefreshable
             }
         }
 
-        PageInstanceSavesLeftViewModel.HintRefreshing();
+        HintService.Hint(Lang.Text("Instance.Saves.Left.Refreshing"));
     }
+
+    #endregion
 }

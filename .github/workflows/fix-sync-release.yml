@@ -55,8 +55,10 @@ jobs:
         run: |
           set -euo pipefail
           cd source
-          git fetch https://github.com/PCL-Community/PCL-CE.git refs/heads/dev
-          upstream=$(git rev-parse FETCH_HEAD)
+          upstream_tag=$(gh api repos/PCL-Community/PCL-CE/releases/latest --jq '.tag_name')
+          test -n "$upstream_tag"
+          git fetch https://github.com/PCL-Community/PCL-CE.git "refs/tags/$upstream_tag"
+          upstream=$(git rev-parse "FETCH_HEAD^{commit}")
           control=$(git -C ../control rev-parse HEAD)
           tag="fix-${upstream:0:12}-${control:0:12}"
           # Credentials can change without a source commit; allow an explicit new release identity.
@@ -75,17 +77,17 @@ jobs:
               exit 0
             fi
           fi
-          old=$(git ls-remote origin refs/heads/patched-dev | cut -f1)
+          old=$(git ls-remote origin refs/heads/patched-stable | cut -f1)
           git checkout --detach "$upstream"
           python ../control/fix/apply.py .
           cp -r ../control/fix ./fix
           cp ../control/README.md ../control/README-EN.md ../control/README-ZH_TW.md .
-          python - "$upstream" "$control" "$tag" <<'PY'
+          python - "$upstream" "$control" "$tag" "$upstream_tag" <<'PY'
           import json, sys
           from pathlib import Path
           Path('fix-provenance.json').write_text(json.dumps({
               'upstream': sys.argv[1], 'control': sys.argv[2], 'release_tag': sys.argv[3],
-              'repository': 'PCL-Community/PCL-CE', 'branch': 'dev'
+              'repository': 'PCL-Community/PCL-CE', 'channel': 'stable', 'upstream_tag': sys.argv[4]
           }, indent=2) + '\n', encoding='utf-8')
           PY
           git config user.name 'github-actions[bot]'
@@ -94,7 +96,7 @@ jobs:
           # Replay the fork patch on the original upstream history.
           git commit -m "fix: apply PCL_CE_Fix overlay to $upstream"
           sha=$(git rev-parse HEAD)
-          git push "--force-with-lease=refs/heads/patched-dev:$old" origin "$sha:refs/heads/patched-dev"
+          git push "--force-with-lease=refs/heads/patched-stable:$old" origin "$sha:refs/heads/patched-stable"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo 'build=true' >> "$GITHUB_OUTPUT"
 
@@ -182,9 +184,9 @@ jobs:
           p = json.loads(Path('fix-provenance.json').read_text())
           Path('release-notes.md').write_text(
               'PCL_CE_Fix：第三方独立修改版本，解除基于地区的安装与文件补全限制。\n\n'
-              f"上游 dev：{p['upstream']}\n\n控制版本：{p['control']}\n\n"
+              f"上游正式版：{p['upstream_tag']} · {p['upstream']}\n\n控制版本：{p['control']}\n\n"
               '直接提供 x64 / ARM64 单文件 EXE，与上游一致，不包含 .NET 运行时。运行前请安装对应架构的 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)。\n\n'
-              '此版本跟随上游开发分支；未配置自有 API 凭据时，微软登录、CurseForge 等服务可能不可用。'
+              '此版本跟随上游最新正式 Release；未配置自有 API 凭据时，微软登录、CurseForge 等服务可能不可用。'
               '启动提醒可选择不再显示；更新页同时检查本仓库和上游，可明确选择保留补丁更新或切回上游。安装前后校验 SHA-256；文件占用时自动重试替换，失败时明确提示。\n\n更新页新增自动 / GH-Proxy 加速 / GitHub 直连选项，大陆设备区域默认优先加速，失败回退直连。\n', encoding='utf-8')
           PY
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

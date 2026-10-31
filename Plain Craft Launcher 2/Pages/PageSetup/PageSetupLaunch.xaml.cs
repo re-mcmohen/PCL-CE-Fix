@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,26 +10,14 @@ using PCL.Core.App.Localization;
 
 namespace PCL;
 
-public partial class PageSetupLaunch : IPageView
+public partial class PageSetupLaunch
 {
-    private readonly PageSetupLaunchViewModel _vm = new();
-    private bool _refreshed;
     private bool isLoad;
 
     public PageSetupLaunch()
     {
         Loaded += PageSetupLaunch_Loaded;
-        Unloaded += PageSetupLaunch_Unloaded;
         InitializeComponent();
-        DataContext = _vm;
-    }
-
-    public PageSetupLaunchViewModel ViewModel => _vm;
-
-    public void OnNavigatedTo(object? parameter) => Refresh();
-
-    public void OnNavigatedFrom()
-    {
     }
 
     private void PageSetupLaunch_Loaded(object sender, RoutedEventArgs e)
@@ -37,14 +25,19 @@ public partial class PageSetupLaunch : IPageView
         // 重复加载部分
         PanBack.ScrollToHome();
         RefreshRam(false);
-        _vm.ShowSwitchButton = InstanceList.McMcInstanceSelected is not null;
-
-        Refresh();
+        if (ModInstanceList.McMcInstanceSelected is null)
+            BtnSwitch.Visibility = Visibility.Collapsed;
+        else
+            BtnSwitch.Visibility = Visibility.Visible;
 
         // 非重复加载部分
         if (isLoad)
             return;
         isLoad = true;
+
+        ModAnimation.AniControlEnabled += 1;
+        Reload();
+        ModAnimation.AniControlEnabled -= 1;
 
         // 内存自动刷新
         var timer = new DispatcherTimer { Interval = new TimeSpan(0, 0, 0, 1) };
@@ -53,26 +46,21 @@ public partial class PageSetupLaunch : IPageView
         RectRamGame.SizeChanged += (s, e) => RefreshRamText();
     }
 
-    private void PageSetupLaunch_Unloaded(object sender, RoutedEventArgs e) => _refreshed = false;
-
-    private void Refresh()
-    {
-        if (_refreshed)
-            return;
-        _refreshed = true;
-        Animations.AniBeginControl();
-        Reload();
-        Animations.AniEndControl();
-    }
-
     public void Reload()
     {
-        Animations.AniBeginControl();
         try
         {
             // 启动参数
             TextArgumentTitle.Text = Config.Launch.Title;
-            _vm.Reload();
+            TextArgumentInfo.Text = Config.Launch.TypeInfo;
+            ComboArgumentIndieV2.SelectedIndex = Config.Launch.IndieSolutionV2;
+            ComboArgumentVisibie.SelectedIndex = (int)Config.Launch.LauncherVisibility;
+            ComboArgumentPriority.SelectedValue = ((int)Config.Launch.ProcessPriority).ToString();
+            ComboArgumentWindowType.SelectedIndex = (int)Config.Launch.GameWindowMode;
+            TextArgumentWindowWidth.Text = Config.Launch.GameWindowWidth.ToString();
+            TextArgumentWindowHeight.Text = Config.Launch.GameWindowHeight.ToString();
+            ComboMsAuthType.SelectedIndex = Config.Launch.LoginMsAuthType;
+            ComboPreferredIpStack.SelectedIndex = (int)Config.Launch.PreferredIpStack;
             WindowTypeUIRefresh();
 
             // 游戏内存
@@ -82,6 +70,10 @@ public partial class PageSetupLaunch : IPageView
             RamType(Config.Launch.MemoryAllocationMode);
 
             // 高级设置
+            ComboAdvanceRenderer.SelectedIndex = Config.Launch.Renderer;
+            TextAdvanceJvm.Text = Config.Launch.JvmArgs;
+            TextAdvanceGame.Text = Config.Launch.GameArgs;
+            TextAdvanceRun.Text = Config.Launch.PreLaunchCommand;
             CheckAdvanceRunWait.Checked = Config.Launch.PreLaunchCommandWait;
             CheckAdvanceDisableLF.Checked = Config.Launch.DisableLF;
             CheckAdvanceGraphicCard.Checked = Config.Launch.SetGpuPreference;
@@ -92,9 +84,8 @@ public partial class PageSetupLaunch : IPageView
             if (SystemInfo.IsArm64System)
             {
                 CheckAdvanceDisableJLW.Checked = true;
-                CheckAdvanceDisableJLW.TrySetLocalizedValue(
-                    "ToolTip",
-                    "Setup.Launch.Advanced.DisableJlw.Arm64Notice");
+                CheckAdvanceDisableJLW.IsEnabled = false;
+                CheckAdvanceDisableJLW.ToolTip = Lang.Text("Setup.Launch.Advanced.DisableJlw.Arm64Notice");
             }
             else
             {
@@ -104,24 +95,20 @@ public partial class PageSetupLaunch : IPageView
 
         catch (NullReferenceException ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 Lang.Text("Setup.Launch.Error.ConfigReset"),
-                Common.LogLevel.Msgbox,
+                ModBase.LogLevel.Msgbox,
                 userSummary: Lang.Text("Setup.Launch.Error.ConfigReset"));
             Reset();
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 Lang.Text("Setup.Launch.Error.LoadFailed"),
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Setup.Launch.Error.LoadFailed"));
-        }
-        finally
-        {
-            Animations.AniEndControl();
         }
     }
 
@@ -131,15 +118,15 @@ public partial class PageSetupLaunch : IPageView
         try
         {
             Config.Launch.Reset();
-            Common.Log("[Setup] 已初始化启动设置");
+            ModBase.Log("[Setup] 已初始化启动设置");
             HintService.Hint(Lang.Text("Setup.Launch.Initialized"), HintType.Success, false);
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 Lang.Text("Setup.Launch.Error.InitFailed"),
-                Common.LogLevel.Msgbox,
+                ModBase.LogLevel.Msgbox,
                 userSummary: Lang.Text("Setup.Launch.Error.InitFailed"));
         }
 
@@ -147,70 +134,51 @@ public partial class PageSetupLaunch : IPageView
     }
 
     // 将控件改变路由到设置改变
-    private void RadioBoxChange(object senderRaw, Common.RouteEventArgs e)
+    private void RadioBoxChange(object senderRaw, ModBase.RouteEventArgs e)
     {
         var sender = (MyRadioBox)senderRaw;
         var gotCfg = sender.Tag?.ToString()?.Split("/") ?? Array.Empty<string>();
-        if (!Animations.AniExitsAnyControl() && gotCfg.Length >= 2)
+        if (ModAnimation.AniControlEnabled == 0 && gotCfg.Length >= 2)
             SetByTag(gotCfg[0], int.Parse(gotCfg[1]));
     }
 
     private void TextBoxChange(object senderRaw, RoutedEventArgs e)
     {
         var sender = (MyTextBox)senderRaw;
-        if (!Animations.AniExitsAnyControl())
+        if (ModAnimation.AniControlEnabled == 0)
             SetByTag(sender.Tag?.ToString(), sender.Text);
     }
 
     private void TextArgumentTitle_OnTextChanged(object senderRaw, TextChangedEventArgs e)
     {
         var sender = (MyTextBox)senderRaw;
-        if (!Animations.AniExitsAnyControl())
+        if (ModAnimation.AniControlEnabled == 0)
             SetByTag(sender.Tag?.ToString(), sender.Text);
     }
 
     private void SliderChange(object senderRaw, bool user)
     {
         var sender = (MySlider)senderRaw;
-        if (!Animations.AniExitsAnyControl())
+        if (ModAnimation.AniControlEnabled == 0)
             SetByTag(sender.Tag?.ToString(), sender.Value);
     }
 
     private void ComboChange(object senderRaw, SelectionChangedEventArgs e)
     {
         var sender = (MyComboBox)senderRaw;
-        if (Animations.AniExitsAnyControl())
-            return;
-        var senderTag = sender.Tag?.ToString();
-        if (string.IsNullOrEmpty(senderTag))
-            return;
-        // SelectedIndex < 0 表示下拉尚未完成初始化，此时不得写回配置
-        switch (senderTag)
+        if (ModAnimation.AniControlEnabled == 0)
         {
-            case "LoginMsAuthType":
-                if (sender.SelectedIndex < 0)
-                    return;
-                SetByTag(senderTag, Math.Clamp(sender.SelectedIndex, 0, 1));
-                return;
-            case "LaunchArgumentPriority":
-                if (sender.SelectedValue is null)
-                    return;
-                SetByTag(senderTag, Convert.ToInt32(sender.SelectedValue));
-                return;
-            default:
-                if (sender.SelectedIndex < 0)
-                    return;
-                SetByTag(senderTag, sender.SelectedIndex);
-                if (senderTag == "LaunchArgumentWindowType")
-                    WindowTypeUIRefresh();
-                return;
+            var senderTag = sender.Tag?.ToString();
+            SetByTag(senderTag,
+                senderTag == "LaunchArgumentPriority" ? Convert.ToInt32(sender.SelectedValue) : sender.SelectedIndex);
+            if (senderTag == "LaunchArgumentWindowType") WindowTypeUIRefresh();
         }
     }
 
     private void CheckBoxChange(object senderRaw, bool user)
     {
         var sender = (MyCheckBox)senderRaw;
-        if (!Animations.AniExitsAnyControl())
+        if (ModAnimation.AniControlEnabled == 0)
             SetByTag(sender.Tag?.ToString(), sender.Checked);
         // 锁定内存状态变化时同步刷新初始内存滑块的可用状态
         if (ReferenceEquals(sender, CheckAdvanceLockMemory))
@@ -223,9 +191,9 @@ public partial class PageSetupLaunch : IPageView
     // 切换到实例独立设置
     private void BtnSwitch_Click(object sender, MouseButtonEventArgs e)
     {
-        InstanceList.McMcInstanceSelected.Load();
-        PageInstanceLeft.McInstance = InstanceList.McMcInstanceSelected;
-        Launcher.frmMain.PageChange(FormMain.PageType.InstanceSetup, FormMain.PageSubType.VersionSetup);
+        ModInstanceList.McMcInstanceSelected.Load();
+        PageInstanceLeft.McInstance = ModInstanceList.McMcInstanceSelected;
+        ModMain.frmMain.PageChange(FormMain.PageType.InstanceSetup, FormMain.PageSubType.VersionSetup);
     }
 
     private void ComboAdvanceRenderer_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -252,21 +220,21 @@ public partial class PageSetupLaunch : IPageView
     }
 
     /// <summary>
-    /// 刷新 UI 上的 RAM 显示。
+    ///     刷新 UI 上的 RAM 显示。
     /// </summary>
     public void RefreshRam(bool showAnim)
     {
-        if (LabRamGame is null || LabRamUsed is null || Launcher.frmMain.pageCurrent != FormMain.PageType.Setup ||
-            Launcher.frmSetupLeft.pageID != FormMain.PageSubType.SetupLaunch)
+        if (LabRamGame is null || LabRamUsed is null || ModMain.frmMain.pageCurrent != FormMain.PageType.Setup ||
+            ModMain.frmSetupLeft.pageID != FormMain.PageSubType.SetupLaunch)
             return;
         // 获取内存情况
-        var ramGame = Math.Round(GetRam(InstanceList.McMcInstanceSelected, false), 5);
+        var ramGame = Math.Round(GetRam(ModInstanceList.McMcInstanceSelected, false), 5);
         var phyRam = KernelInterop.GetPhysicalMemoryBytes();
         var ramTotal = Math.Round((double)phyRam.Total / 1024 / 1024 / 1024, 1);
         var ramAvailable = Math.Round((double)phyRam.Available / 1024 / 1024 / 1024, 1);
         var ramGameActual = Math.Round(Math.Min(ramGame, ramAvailable), 5);
         var ramUsed = Math.Round(ramTotal - ramAvailable, 5);
-        var ramEmpty = Math.Round(Common.MathClamp(ramTotal - ramUsed - ramGame, 0d, 1000d), 1);
+        var ramEmpty = Math.Round(ModBase.MathClamp(ramTotal - ramUsed - ramGame, 0d, 1000d), 1);
         // 设置最大可用内存
         if (ramTotal <= 1.5d)
             SliderRamCustom.MaxValue = (int)Math.Round(Math.Max(Math.Floor((ramTotal - 0.3d) / 0.1d), 1d));
@@ -277,7 +245,7 @@ public partial class PageSetupLaunch : IPageView
         else
             SliderRamCustom.MaxValue = (int)Math.Round(Math.Floor((ramTotal - 16d) / 2d) + 33d);
         // 设置文本
-        var ramInitial = GetInitialRam(InstanceList.McMcInstanceSelected, false);
+        var ramInitial = GetInitialRam(ModInstanceList.McMcInstanceSelected, false);
         string suffixText;
         if (ramInitial.HasValue && ramGame != ramGameActual)
             suffixText = Lang.Text("Setup.Launch.Memory.SuffixBoth", Lang.Number(ramInitial.Value, "N1"), Lang.Number(ramGameActual, "N1"));
@@ -291,22 +259,22 @@ public partial class PageSetupLaunch : IPageView
         LabRamUsed.Text = $"{Lang.Number(ramUsed, "N1")} GiB";
         LabRamTotal.Text = $" / {Lang.Number(ramTotal, "N1")} GiB";
         LabRamWarn.Visibility =
-            ramGame == 1d && !JavaRuntime.IsGameSet64BitJava() && !SystemInfo.Is32BitSystem && JavaRuntime.Javas.ExistAnyJava()
+            ramGame == 1d && !ModJava.IsGameSet64BitJava() && !SystemInfo.Is32BitSystem && ModJava.Javas.ExistAnyJava()
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         HintRamTooHigh.Visibility = ramGame / ramTotal > 0.75d ? Visibility.Visible : Visibility.Collapsed;
         if (showAnim)
         {
             // 宽度动画
-            Animations.AniStart(
+            ModAnimation.AniStart(
                 new[]
                 {
-                    Animations.AaGridLengthWidth(ColumnRamUsed, ramUsed - ColumnRamUsed.Width.Value, 800,
-                        ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Strong)),
-                    Animations.AaGridLengthWidth(ColumnRamGame, ramGameActual - ColumnRamGame.Width.Value, 800,
-                        ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Strong)),
-                    Animations.AaGridLengthWidth(ColumnRamEmpty, ramEmpty - ColumnRamEmpty.Width.Value, 800,
-                        ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Strong))
+                    ModAnimation.AaGridLengthWidth(ColumnRamUsed, ramUsed - ColumnRamUsed.Width.Value, 800,
+                        ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Strong)),
+                    ModAnimation.AaGridLengthWidth(ColumnRamGame, ramGameActual - ColumnRamGame.Width.Value, 800,
+                        ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Strong)),
+                    ModAnimation.AaGridLengthWidth(ColumnRamEmpty, ramEmpty - ColumnRamEmpty.Width.Value, 800,
+                        ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Strong))
                 }, "SetupLaunch Ram Grid");
         }
         else
@@ -327,7 +295,7 @@ public partial class PageSetupLaunch : IPageView
     private int ramTextRight = 1;
 
     /// <summary>
-    /// 刷新 UI 上的文本位置。
+    ///     刷新 UI 上的文本位置。
     /// </summary>
     private void RefreshRamText()
     {
@@ -357,34 +325,34 @@ public partial class PageSetupLaunch : IPageView
             {
                 case 0:
                 {
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaOpacity(LabRamUsed, -LabRamUsed.Opacity, 100),
-                            Animations.AaOpacity(LabRamTotal, -LabRamTotal.Opacity, 100),
-                            Animations.AaOpacity(LabRamUsedTitle, -LabRamUsedTitle.Opacity, 100)
+                            ModAnimation.AaOpacity(LabRamUsed, -LabRamUsed.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamTotal, -LabRamTotal.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamUsedTitle, -LabRamUsedTitle.Opacity, 100)
                         }, "SetupLaunch Ram TextLeft");
                     break;
                 }
                 case 1:
                 {
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaOpacity(LabRamUsed, 1d - LabRamUsed.Opacity, 100),
-                            Animations.AaOpacity(LabRamTotal, -LabRamTotal.Opacity, 100),
-                            Animations.AaOpacity(LabRamUsedTitle, 0.7d - LabRamUsedTitle.Opacity, 100)
+                            ModAnimation.AaOpacity(LabRamUsed, 1d - LabRamUsed.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamTotal, -LabRamTotal.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamUsedTitle, 0.7d - LabRamUsedTitle.Opacity, 100)
                         }, "SetupLaunch Ram TextLeft");
                     break;
                 }
                 case 2:
                 {
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaOpacity(LabRamUsed, 1d - LabRamUsed.Opacity, 100),
-                            Animations.AaOpacity(LabRamTotal, 1d - LabRamTotal.Opacity, 100),
-                            Animations.AaOpacity(LabRamUsedTitle, 0.7d - LabRamUsedTitle.Opacity, 100)
+                            ModAnimation.AaOpacity(LabRamUsed, 1d - LabRamUsed.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamTotal, 1d - LabRamTotal.Opacity, 100),
+                            ModAnimation.AaOpacity(LabRamUsedTitle, 0.7d - LabRamUsedTitle.Opacity, 100)
                         }, "SetupLaunch Ram TextLeft");
                     break;
                 }
@@ -401,44 +369,44 @@ public partial class PageSetupLaunch : IPageView
             right = 1;
         if (right == 0)
         {
-            if (!Animations.AniExitsAnyControl() &&
-                (ramTextRight != right || Animations.AniIsRun("SetupLaunch Ram TextRight")))
+            if (ModAnimation.AniControlEnabled == 0 &&
+                (ramTextRight != right || ModAnimation.AniIsRun("SetupLaunch Ram TextRight")))
             {
                 // 需要动画
-                Animations.AniStart(
+                ModAnimation.AniStart(
                     new[]
                     {
-                        Animations.AaX(LabRamGame, totalWidth - labGameWidth - LabRamGame.Margin.Left, 100,
-                            ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak)),
-                        Animations.AaX(LabRamGameTitle, totalWidth - labGameTitleWidth - LabRamGameTitle.Margin.Left,
-                            100, ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak))
+                        ModAnimation.AaX(LabRamGame, totalWidth - labGameWidth - LabRamGame.Margin.Left, 100,
+                            ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak)),
+                        ModAnimation.AaX(LabRamGameTitle, totalWidth - labGameTitleWidth - LabRamGameTitle.Margin.Left,
+                            100, ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak))
                     }, "SetupLaunch Ram TextRight");
             }
             else
             {
                 // 不需要动画
-                Animations.AniStop("SetupLaunch Ram TextRight");
+                ModAnimation.AniStop("SetupLaunch Ram TextRight");
                 LabRamGame.Margin = new Thickness(totalWidth - labGameWidth, 3d, 0d, 0d);
                 LabRamGameTitle.Margin = new Thickness(totalWidth - labGameTitleWidth, 0d, 0d, 5d);
             }
         }
-        else if (!Animations.AniExitsAnyControl() &&
-                 (ramTextRight != right || Animations.AniIsRun("SetupLaunch Ram TextRight")))
+        else if (ModAnimation.AniControlEnabled == 0 &&
+                 (ramTextRight != right || ModAnimation.AniIsRun("SetupLaunch Ram TextRight")))
         {
             // 需要动画
-            Animations.AniStart(
+            ModAnimation.AniStart(
                 new[]
                 {
-                    Animations.AaX(LabRamGame, 2d + rectUsedWidth - LabRamGame.Margin.Left, 100,
-                        ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak)),
-                    Animations.AaX(LabRamGameTitle, 2d + rectUsedWidth - LabRamGameTitle.Margin.Left, 100,
-                        ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak))
+                    ModAnimation.AaX(LabRamGame, 2d + rectUsedWidth - LabRamGame.Margin.Left, 100,
+                        ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak)),
+                    ModAnimation.AaX(LabRamGameTitle, 2d + rectUsedWidth - LabRamGameTitle.Margin.Left, 100,
+                        ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak))
                 }, "SetupLaunch Ram TextRight");
         }
         else
         {
             // 不需要动画
-            Animations.AniStop("SetupLaunch Ram TextRight");
+            ModAnimation.AniStop("SetupLaunch Ram TextRight");
             LabRamGame.Margin = new Thickness(2d + rectUsedWidth, 3d, 0d, 0d);
             LabRamGameTitle.Margin = new Thickness(2d + rectUsedWidth, 0d, 0d, 5d);
         }
@@ -447,7 +415,7 @@ public partial class PageSetupLaunch : IPageView
     }
 
     /// <summary>
-    /// 将内存滑块刻度值转换为 GB。
+    ///     将内存滑块刻度值转换为 GB。
     /// </summary>
     public static double GetRamFromTick(int value)
     {
@@ -461,8 +429,8 @@ public partial class PageSetupLaunch : IPageView
     }
 
     /// <summary>
-    /// 判断生效的自定义 JVM 参数中是否已包含 -Xms。
-    /// 此时启动路径会跳过自动追加的初始堆，实际值以自定义参数为准。
+    ///     判断生效的自定义 JVM 参数中是否已包含 -Xms。
+    ///     此时启动路径会跳过自动追加的初始堆，实际值以自定义参数为准。
     /// </summary>
     public static bool HasCustomXms(McInstance version)
     {
@@ -474,7 +442,7 @@ public partial class PageSetupLaunch : IPageView
     }
 
     /// <summary>
-    /// 获取全局设置的初始堆大小（-Xms）。单位为 GB；未启用自定义初始大小时返回 null。
+    ///     获取全局设置的初始堆大小（-Xms）。单位为 GB；未启用自定义初始大小时返回 null。
     /// </summary>
     public static double? GetInitialRam(McInstance version, bool useVersionJavaSetup, bool? is32BitJava = default)
     {
@@ -494,7 +462,7 @@ public partial class PageSetupLaunch : IPageView
     }
 
     /// <summary>
-    /// 获取当前设置的 RAM 值。单位为 GB。
+    ///     获取当前设置的 RAM 值。单位为 GB。
     /// </summary>
     public static double GetRam(McInstance version, bool useVersionJavaSetup, bool? is32BitJava = default)
     {
@@ -567,7 +535,7 @@ public partial class PageSetupLaunch : IPageView
         }
 
         // 若使用 32 位 Java，则限制为 1G
-        if (is32BitJava ?? !JavaRuntime.IsGameSet64BitJava(useVersionJavaSetup ? version : null))
+        if (is32BitJava ?? !ModJava.IsGameSet64BitJava(useVersionJavaSetup ? version : null))
             ramGive = Math.Min(1d, ramGive);
         return ramGive;
     }
@@ -580,17 +548,30 @@ public partial class PageSetupLaunch : IPageView
     {
         if (ComboArgumentWindowType is null)
             return;
-        _vm.ShowWindowSize = ComboArgumentWindowType.SelectedIndex == 3;
+        if (ComboArgumentWindowType.SelectedIndex == 3 && LabArgumentWindowMiddle is not null &&
+            LabArgumentWindowMiddle.Visibility == Visibility.Collapsed)
+        {
+            LabArgumentWindowMiddle.Visibility = Visibility.Visible;
+            TextArgumentWindowHeight.Visibility = Visibility.Visible;
+            TextArgumentWindowWidth.Visibility = Visibility.Visible;
+        }
+        else if (ComboArgumentWindowType.SelectedIndex != 3 && LabArgumentWindowMiddle is not null &&
+                 LabArgumentWindowMiddle.Visibility == Visibility.Visible)
+        {
+            LabArgumentWindowMiddle.Visibility = Visibility.Collapsed;
+            TextArgumentWindowHeight.Visibility = Visibility.Collapsed;
+            TextArgumentWindowWidth.Visibility = Visibility.Collapsed;
+        }
     }
 
     // 可见性选择直接关闭的警告
     private void ComboArgumentVisibie_SelectionChanged(object sender, SelectionChangedEventArgs sizeChangedEventArgs)
     {
         ComboChange(sender, sizeChangedEventArgs);
-        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
+        if (ModAnimation.AniControlEnabled != 0)
             return;
         if (ComboArgumentVisibie.SelectedIndex == 0)
-            if (Launcher.MyMsgBox(
+            if (ModMain.MyMsgBox(
                     Lang.Text("Setup.Launch.Options.Visibility.CloseImmediately.Warning.Message"),
                     Lang.Text("Setup.Launch.Options.Visibility.CloseImmediately.Warning.Title"),
                     Lang.Text("Setup.Launch.Options.Visibility.CloseImmediately.Warning.Continue"),
@@ -601,9 +582,9 @@ public partial class PageSetupLaunch : IPageView
     // 实例隔离提示
     private void ComboArgumentIndie_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
+        if (ModAnimation.AniControlEnabled != 0)
             return;
-        Launcher.MyMsgBox(Lang.Text("Setup.Launch.Options.InstanceIsolation.DefaultPolicyHint"));
+        ModMain.MyMsgBox(Lang.Text("Setup.Launch.Options.InstanceIsolation.DefaultPolicyHint"));
     }
 
     #endregion
@@ -633,11 +614,11 @@ public partial class PageSetupLaunch : IPageView
 
     private void ComboAdvanceRenderer_SelectionChanged(MyComboBox sender, object e)
     {
-        if (Animations.AniExitsAnyControl() || sender is not MyComboBox combo || (!combo.IsDropDownOpen && !Keyboard.IsKeyDown(Key.Enter)))
+        if (ModAnimation.AniControlEnabled != 0)
             return;
         if (!States.Hint.Renderer && ComboAdvanceRenderer.SelectedIndex != 0)
         {
-            if (Launcher.MyMsgBox(Lang.Text("Setup.Launch.Advanced.Renderer.Warning.Message"),
+            if (ModMain.MyMsgBox(Lang.Text("Setup.Launch.Advanced.Renderer.Warning.Message"),
                     Lang.Text("Common.Dialog.Warning"),
                     Lang.Text("Setup.Launch.Advanced.Renderer.Warning.Confirm"),
                     Lang.Text("Common.Action.Cancel"), isWarn: true) == 2)

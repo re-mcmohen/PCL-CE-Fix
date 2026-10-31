@@ -1,4 +1,4 @@
-﻿<local:MyPageRight
+<local:MyPageRight
     x:Class="PCL.PageSetupAbout"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,8 +9,7 @@
     mc:Ignorable="d"
     DataContext="{Binding Source={x:Static app:Basics.Metadata}}"
     PanScroll="{Binding ElementName=PanBack}"
-    RenderOptions.BitmapScalingMode="LowQuality"
-    xmlns:loc="https://ce.pclc.cc/core/localization">
+    RenderOptions.BitmapScalingMode="LowQuality">
     <local:MyScrollViewer
         x:Name="PanBack"
         HorizontalScrollBarVisibility="Disabled"
@@ -19,7 +18,7 @@
             x:Name="PanMain"
             Margin="25,10"
             Grid.IsSharedSizeScope="True">
-            <local:MyCard Margin="0,15" Title="{loc:Loc Setup.About.Title}">
+            <local:MyCard Margin="0,15" Title="{DynamicResource Setup.About.Title}">
                 <Grid Margin="21,40,21,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="45" />
@@ -35,30 +34,28 @@
                         Grid.Row="0"
                         Grid.Column="1"
                         Margin="-5,0,15,0"
-                        Info="{loc:Loc Setup.About.OriginalAuthor.Info}"
+                        Info="{DynamicResource Setup.About.OriginalAuthor.Info}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.OriginalAuthor.Name}" />
+                        Title="{DynamicResource Setup.About.OriginalAuthor.Name}" />
                     <local:MyListItem
                         Grid.Row="1"
                         Grid.Column="1"
                         Margin="-5,0,15,0"
-                        Info="{loc:Loc Setup.About.Community.Info}"
+                        Info="{DynamicResource Setup.About.Community.Info}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.Community.Name}" />
+                        Title="{DynamicResource Setup.About.Community.Name}" />
                     <local:MyListItem
                         x:Name="ItemAboutPcl"
                         Grid.Row="2"
                         Grid.Column="1"
                         Margin="-5,0,15,0"
-                        Info="{Binding ViewModel.AboutInfo, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
+                        Info="{DynamicResource Setup.About.Version.Info}"
                         IsHitTestVisible="False"
                         Title="{Binding Name}" />
                     <Image
                         x:Name="ImgPCLLogo"
                         Grid.Row="2"
-                        Margin="3"
-                        IsHitTestVisible="{Binding ViewModel.IsLogoClickEnabled, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
-                        MouseLeftButtonDown="ImgPCLLogo_Click"
+                        Margin="3" MouseLeftButtonDown="ImgPCLLogo_Click"
                         Source="/Plain Craft Launcher 2;component/Images/Heads/Logo-CE.png">
                         <Image.Clip>
                             <EllipseGeometry
@@ -89,24 +86,24 @@
                         Height="35"
                         local:CustomEventService.EventData="https://ifdian.net/a/LTCat"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SponsorOriginalAuthor}" />
+                        Text="{DynamicResource Setup.About.SponsorOriginalAuthor}" />
                     <local:MyButton
                         Grid.Row="1"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://github.com/PCL-Community"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.GitHubHome}" />
+                        Text="{DynamicResource Setup.About.GitHubHome}" />
                     <local:MyButton
                         Grid.Row="2"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://github.com/PCL-Community/PCL2-CE"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SourceCode}" />
+                        Text="{DynamicResource Setup.About.SourceCode}" />
                 </Grid>
             </local:MyCard>
-            <local:MyCard Margin="0,0,0,15" Title="{loc:Loc Setup.About.SpecialThanks.Title}">
+            <local:MyCard Margin="0,0,0,15" Title="{DynamicResource Setup.About.SpecialThanks.Title}">
                 <Grid Margin="21,40,21,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="45" />
@@ -126,96 +123,94 @@
                         Grid.Row="0"
                         Grid.Column="1"
                         Margin="-5,0,15,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.Bmclapi}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.Bmclapi}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Bangbang93}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Bangbang93}" />
                     <local:MyButton
                         Grid.Row="0"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://afdian.com/a/bangbang93"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SpecialThanks.SponsorMirror}" />
+                        Text="{DynamicResource Setup.About.SpecialThanks.SponsorMirror}" />
                     <local:MyListItem
                         x:Name="ItemMcmod"
                         Grid.Row="1"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Visibility="{Binding ViewModel.ShowMcmod, Converter={StaticResource BooleanToVisibilityConverter}, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.Mcmod}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.Mcmod}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Mcmod}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Mcmod}" />
                     <local:MyButton
                         x:Name="BtnMcmod"
                         Grid.Row="1"
                         Grid.Column="2"
                         Height="35"
-                        Visibility="{Binding ViewModel.ShowMcmod, Converter={StaticResource BooleanToVisibilityConverter}, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
                         local:CustomEventService.EventData="https://www.mcmod.cn"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SpecialThanks.OpenMcmod}" />
+                        Text="{DynamicResource Setup.About.SpecialThanks.OpenMcmod}" />
                     <local:MyListItem
                         Grid.Row="2"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.Cloud}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.Cloud}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Pysio}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Pysio}" />
                     <local:MyButton
                         Grid.Row="2"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://www.pysio.online"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SpecialThanks.GoBlog}" />
+                        Text="{DynamicResource Setup.About.SpecialThanks.GoBlog}" />
                     <local:MyListItem
                         Grid.Row="3"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.Cloud}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.Cloud}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Yunmoan}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Yunmoan}" />
                     <local:MyButton
                         Grid.Row="3"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://www.zyghit.cn"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SpecialThanks.OpenWebsite}" />
+                        Text="{DynamicResource Setup.About.SpecialThanks.OpenWebsite}" />
                     <local:MyListItem
                         Grid.Row="4"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.LinkModule}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.LinkModule}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.EasyTier}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.EasyTier}" />
                     <local:MyButton
                         Grid.Row="4"
                         Grid.Column="2"
                         Height="35"
                         local:CustomEventService.EventData="https://easytier.cn"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.SpecialThanks.OpenWebsite}" />
+                        Text="{DynamicResource Setup.About.SpecialThanks.OpenWebsite}" />
                     <local:MyListItem
                         Grid.Row="5"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.Mcim}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.Mcim}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Z0z0r4}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Z0z0r4}" />
                     <local:MyListItem
                         Grid.Row="6"
                         Grid.Column="1"
                         Grid.ColumnSpan="2"
                         Margin="-5,0,0,0"
-                        Info="{loc:Loc Setup.About.SpecialThanks.Info.IconDesign}"
+                        Info="{DynamicResource Setup.About.SpecialThanks.Info.IconDesign}"
                         IsHitTestVisible="False"
-                        Title="{loc:Loc Setup.About.SpecialThanks.Name.Emperormummy}" />
+                        Title="{DynamicResource Setup.About.SpecialThanks.Name.Emperormummy}" />
                     <Image
                         Grid.Row="0"
                         Margin="3"
@@ -231,7 +226,6 @@
                         x:Name="ImgMcmod"
                         Grid.Row="1"
                         Margin="3"
-                        Visibility="{Binding ViewModel.ShowMcmod, Converter={StaticResource BooleanToVisibilityConverter}, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
                         Source="/Plain Craft Launcher 2;component/Images/Heads/wiki.png">
                         <Image.Clip>
                             <EllipseGeometry
@@ -299,8 +293,8 @@
             </local:MyCard>
             <local:MyCard
                 Margin="0,0,0,15"
-                DataContext="{Binding ViewModel, RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
-                Title="{loc:Loc Setup.About.Contributors.Title}">
+                DataContext="{Binding RelativeSource={RelativeSource AncestorType=local:PageSetupAbout}}"
+                Title="{DynamicResource Setup.About.Contributors.Title}">
                 <Grid Margin="17,42,15,20">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -344,34 +338,34 @@
                         HorizontalAlignment="Center"
                         local:CustomEventService.EventData="https://github.com/PCL-Community/PCL2-CE/graphs/contributors"
                         local:CustomEventService.EventType="OpenUrl"
-                        Text="{loc:Loc Setup.About.Contributors.ViewMore}" />
+                        Text="{DynamicResource Setup.About.Contributors.ViewMore}" />
                 </Grid>
             </local:MyCard>
 
             <local:MyCard
                 Margin="0,0,0,15"
                 CanSwap="True"
-                Title="{loc:Loc Setup.About.Legal.Title}">
+                Title="{DynamicResource Setup.About.Legal.Title}">
                 <StackPanel Margin="25,39,23,20">
                     <TextBlock
                         Margin="0,6,0,4"
                         FontWeight="Bold"
-                        Text="{loc:Loc Setup.About.Legal.PrivacyNotice}"
+                        Text="{DynamicResource Setup.About.Legal.PrivacyNotice}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,0,0,2"
                         LineHeight="17"
-                        Text="{loc:Loc Setup.About.Legal.PrivacyText}"
+                        Text="{DynamicResource Setup.About.Legal.PrivacyText}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,12,0,4"
                         FontWeight="Bold"
-                        Text="{loc:Loc Setup.About.Legal.OtherInfo}"
+                        Text="{DynamicResource Setup.About.Legal.OtherInfo}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,0,0,2"
                         LineHeight="17"
-                        Text="{loc:Loc Setup.About.Legal.CopyrightText}"
+                        Text="{DynamicResource Setup.About.Legal.CopyrightText}"
                         TextWrapping="Wrap" />
                     <StackPanel
                         Height="35"
@@ -384,19 +378,19 @@
                             local:CustomEventService.EventData="https://github.com/PCL-Community/PCL2-CE"
                             local:CustomEventService.EventType="OpenUrl"
                             Padding="13,0"
-                            Text="{loc:Loc Setup.About.Legal.CommunitySource}" />
+                            Text="{DynamicResource Setup.About.Legal.CommunitySource}" />
                         <local:MyButton
                             Margin="0,0,20,0"
                             local:CustomEventService.EventData="https://www.pclc.cc/privacy/personal-info-brief.html"
                             local:CustomEventService.EventType="OpenUrl"
                             Padding="13,0"
-                            Text="{loc:Loc Setup.About.Legal.CommunityLobbyPrivacy}" />
+                            Text="{DynamicResource Setup.About.Legal.CommunityLobbyPrivacy}" />
                         <local:MyButton
                             Margin="0,0,20,0"
                             local:CustomEventService.EventData="https://account.naids.com/policy"
                             local:CustomEventService.EventType="OpenUrl"
                             Padding="13,0"
-                            Text="{loc:Loc Setup.About.Legal.NatayarkTerms}" />
+                            Text="{DynamicResource Setup.About.Legal.NatayarkTerms}" />
                     </StackPanel>
                 </StackPanel>
             </local:MyCard>
@@ -404,27 +398,27 @@
                 Margin="0,0,0,15"
                 CanSwap="True"
                 IsSwapped="True"
-                Title="{loc:Loc Setup.About.UpstreamLegal.Title}">
+                Title="{DynamicResource Setup.About.UpstreamLegal.Title}">
                 <StackPanel Margin="25,39,23,20">
                     <TextBlock
                         Margin="0,6,0,4"
                         FontWeight="Bold"
-                        Text="{loc:Loc Setup.About.Legal.PrivacyNotice}"
+                        Text="{DynamicResource Setup.About.Legal.PrivacyNotice}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,0,0,2"
                         LineHeight="17"
-                        Text="{loc:Loc Setup.About.UpstreamLegal.PrivacyText}"
+                        Text="{DynamicResource Setup.About.UpstreamLegal.PrivacyText}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,12,0,4"
                         FontWeight="Bold"
-                        Text="{loc:Loc Setup.About.Legal.OtherInfo}"
+                        Text="{DynamicResource Setup.About.Legal.OtherInfo}"
                         TextWrapping="Wrap" />
                     <TextBlock
                         Margin="0,0,0,2"
                         LineHeight="17"
-                        Text="{loc:Loc Setup.About.UpstreamLegal.CopyrightText}"
+                        Text="{DynamicResource Setup.About.UpstreamLegal.CopyrightText}"
                         TextWrapping="Wrap" />
                     <StackPanel
                         Height="35"
@@ -438,14 +432,14 @@
                             local:CustomEventService.EventData="https://shimo.im/docs/rGrd8pY8xWkt6ryW"
                             local:CustomEventService.EventType="OpenUrl"
                             Padding="13,0"
-                            Text="{loc:Loc Setup.About.UpstreamLegal.TermsAndDisclaimer}" />
+                            Text="{DynamicResource Setup.About.UpstreamLegal.TermsAndDisclaimer}" />
                         <local:MyButton
                             Width="120"
                             Margin="0,0,20,0"
                             local:CustomEventService.EventData="https://github.com/Meloong-Git/PCL"
                             local:CustomEventService.EventType="OpenUrl"
                             Padding="13,0"
-                            Text="{loc:Loc Setup.About.UpstreamLegal.OpenSource}" />
+                            Text="{DynamicResource Setup.About.UpstreamLegal.OpenSource}" />
                     </StackPanel>
                 </StackPanel>
             </local:MyCard>
@@ -453,7 +447,7 @@
                 Margin="0,0,0,15"
                 CanSwap="True"
                 IsSwapped="True"
-                Title="{loc:Loc Setup.About.Licenses.Title}">
+                Title="{DynamicResource Setup.About.Licenses.Title}">
                 <ItemsControl Margin="25,42,23,4" ItemsSource="{Binding Licenses}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -489,7 +483,7 @@
                                     local:CustomEventService.EventData="{Binding WebsiteUri}"
                                     local:CustomEventService.EventType="OpenUrl"
                                     Padding="13,0"
-                                    Text="{loc:Loc Setup.About.Licenses.ViewWebsite}"
+                                    Text="{DynamicResource Setup.About.Licenses.ViewWebsite}"
                                     Visibility="{Binding WebsiteUri, Converter={StaticResource NullToVisibilityConverter}}" />
                                 <local:MyButton
                                     Grid.Row="1"
@@ -500,7 +494,7 @@
                                     local:CustomEventService.EventData="{Binding LicenseUri}"
                                     local:CustomEventService.EventType="OpenUrl"
                                     Padding="13,0"
-                                    Text="{loc:Loc Setup.About.Licenses.ViewLicense}"
+                                    Text="{DynamicResource Setup.About.Licenses.ViewLicense}"
                                     Visibility="{Binding LicenseUri, Converter={StaticResource NullToVisibilityConverter}}" />
                             </Grid>
                         </DataTemplate>

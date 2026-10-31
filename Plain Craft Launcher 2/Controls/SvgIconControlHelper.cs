@@ -60,7 +60,7 @@ internal static class SvgIconControlHelper
 
     internal static void AnimateSvgIconBrushTo(
         SvgIcon svgIcon,
-        Common.MyColor color,
+        ModBase.MyColor color,
         int duration,
         string? animationKey = null)
     {

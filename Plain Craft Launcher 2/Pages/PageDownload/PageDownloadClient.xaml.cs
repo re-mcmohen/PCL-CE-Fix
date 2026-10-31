@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using PCL.Network;
 using PCL.Core.App.Localization;
 
 namespace PCL;
@@ -17,8 +18,7 @@ public partial class PageDownloadClient
 
     private void LoaderInit()
     {
-        PageLoaderInit(Load, PanLoad, PanBack, null, GameDownload.dlClientListLoader,
-            _ => Load_OnFinish());
+        PageLoaderInit(Load, PanLoad, PanBack, null, ModDownload.dlClientListLoader, _ => Load_OnFinish());
     }
 
     private void Init()
@@ -44,7 +44,7 @@ public partial class PageDownloadClient
                 _ => new List<JsonObject>()
             );
 
-            var versions = (JsonArray)GameDownload.dlClientListLoader.output.Value["versions"];
+            var versions = (JsonArray)ModDownload.dlClientListLoader.output.Value["versions"];
             foreach (JsonObject Version in versions)
             {
                 var cat = McVersionClassifier.ClassifyVersion(Version);
@@ -58,28 +58,16 @@ public partial class PageDownloadClient
 
             PanMain.Children.Clear();
 
-            var cardInfo = new MyCard
-            {
-                Margin = new Thickness(0d, 0d, 0d, 15d)
-            };
-            LocalizedText.TryBind(
-                cardInfo,
-                "Title",
-                () => Lang.Text("Download.Version.Latest.Title"));
+            var cardInfo = new MyCard { Title = Lang.Text("Download.Version.Latest.Title"), Margin = new Thickness(0d, 0d, 0d, 15d) };
             var topestVersions = new List<JsonObject>();
             var release = (JsonObject)dict[McVersionCategory.Release][0].DeepClone();
-            release["lore"] = "Download.Version.Latest.Release";
-            release["loreArgs"] = new JsonArray(
-                McVersionClassifier.GetReleaseTime(release).ToString("O"));
-            release["loreArgsType"] = "date";
+            release["lore"] = Lang.Text("Download.Version.Latest.Release", Lang.Date(McVersionClassifier.GetReleaseTime(release), "g"));
             topestVersions.Add(release);
             if (McVersionClassifier.GetReleaseTime(dict[McVersionCategory.Release][0]) < McVersionClassifier.GetReleaseTime(dict[McVersionCategory.Snapshot][0]))
             {
                 var snapshot = (JsonObject)dict[McVersionCategory.Snapshot][0].DeepClone();
-                snapshot["lore"] = "Download.Version.Latest.Development";
-                snapshot["loreArgs"] = new JsonArray(
-                    McVersionClassifier.GetReleaseTime(snapshot).ToString("O"));
-                snapshot["loreArgsType"] = "date";
+                snapshot["lore"] = Lang.Text("Download.Version.Latest.Development",
+                                   Lang.Date(McVersionClassifier.GetReleaseTime(snapshot), "g"));
                 topestVersions.Add(snapshot);
             }
 
@@ -92,8 +80,8 @@ public partial class PageDownloadClient
             void PutMethod(StackPanel stack)
             {
                 foreach (var item in (IEnumerable)stack.Tag)
-                    stack.Children.Add(DownloadUi.McDownloadListItem((JsonObject)item,
-                        DownloadUi.McDownloadMenuSave, true));
+                    stack.Children.Add(ModDownloadLib.McDownloadListItem((JsonObject)item,
+                        ModDownloadLib.McDownloadMenuSave, true));
             }
 
             ;
@@ -106,13 +94,8 @@ public partial class PageDownloadClient
                 if (!Pair.Value.Any())
                     continue;
 
-                var newCard = new MyCard { Margin = new Thickness(0d, 0d, 0d, 15d) };
-                var categoryKey = McVersionClassifier.GetCategoryKey(Pair.Key);
-                var categoryCount = Pair.Value.Count;
-                LocalizedText.TryBind(
-                    newCard,
-                    "Title",
-                    () => $"{Lang.Text(categoryKey)} ({categoryCount})");
+                var newCard = new MyCard
+                    { Title = McVersionClassifier.GetCategoryDisplayName(Pair.Key) + " (" + Pair.Value.Count + ")", Margin = new Thickness(0d, 0d, 0d, 15d) };
                 var newStack = new StackPanel
                 {
                     Margin = new Thickness(20d, MyCard.SwapedHeight, 18d, 0d),
@@ -128,10 +111,10 @@ public partial class PageDownloadClient
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "可视化 MC 版本列表出错",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Download.Error.OperationFailed"));
         }
     }

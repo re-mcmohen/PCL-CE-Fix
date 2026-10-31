@@ -14,8 +14,7 @@ public partial class PageDownloadFabric
 
     private void LoaderInit()
     {
-        PageLoaderInit(Load, PanLoad, CardVersions, CardTip, GameDownload.DlFabricListLoader,
-            _ => Load_OnFinish());
+        PageLoaderInit(Load, PanLoad, CardVersions, CardTip, ModDownload.dlFabricListLoader, _ => Load_OnFinish());
     }
 
     private void Init()
@@ -28,34 +27,31 @@ public partial class PageDownloadFabric
         // 结果数据化
         try
         {
-            var versions = (JsonArray)GameDownload.DlFabricListLoader.output.Value["installer"];
+            var versions = (JsonArray)ModDownload.dlFabricListLoader.output.Value["installer"];
             PanVersions.Children.Clear();
             foreach (var Version in versions)
                 PanVersions.Children.Add(
-                    DownloadUi.FabricDownloadListItem((JsonObject)Version,
+                    ModDownloadLib.FabricDownloadListItem((JsonObject)Version,
                         (sender, e) => Fabric_Selected((MyListItem)sender, e)));
-            LocalizedText.TryBind(
-                CardVersions,
-                "Title",
-                () => Lang.Text("Download.Version.VersionListCount", versions.Count));
+            CardVersions.Title = Lang.Text("Download.Version.VersionListCount", versions.Count);
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "可视化 Fabric 版本列表出错",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Download.Error.OperationFailed"));
         }
     }
 
     private void Fabric_Selected(MyListItem sender, EventArgs e)
     {
-        DownloadUi.McDownloadFabricLoaderSave((JsonObject)sender.Tag);
+        ModDownloadLib.McDownloadFabricLoaderSave((JsonObject)sender.Tag);
     }
 
     private void BtnWeb_Click(object sender, EventArgs e)
     {
-        Common.OpenWebsite("https://www.fabricmc.net");
+        ModBase.OpenWebsite("https://www.fabricmc.net");
     }
 }

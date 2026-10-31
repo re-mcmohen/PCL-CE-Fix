@@ -6,9 +6,5 @@ public record LoggerConfiguration(
     string? FileNameFormat = null,
     bool AutoDeleteOldFile = true,
     int MaxKeepOldFile = 16,
-#if TRACE
-    LogLevel MinLogLevel = LogLevel.Trace
-#else
     LogLevel MinLogLevel = LogLevel.Info
-#endif
 );

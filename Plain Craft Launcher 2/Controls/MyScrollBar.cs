@@ -6,7 +6,7 @@ public class MyScrollBar : ScrollBar
 {
     // 基础
 
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     public MyScrollBar()
     {
@@ -54,20 +54,20 @@ public class MyScrollBar : ScrollBar
             }
 
             // 触发颜色动画
-            if (IsLoaded && !Animations.AniExitsAnyControl()) // 防止默认属性变更触发动画
+            if (IsLoaded && ModAnimation.AniControlEnabled == 0) // 防止默认属性变更触发动画
             {
                 // 有动画
-                Animations.AniStart(
+                ModAnimation.AniStart(
                     new[]
                     {
-                        Animations.AaColor(this, ForegroundProperty, newColor, time),
-                        Animations.AaOpacity(this, newOpacity - Opacity, time)
+                        ModAnimation.AaColor(this, ForegroundProperty, newColor, time),
+                        ModAnimation.AaOpacity(this, newOpacity - Opacity, time)
                     }, "MyScrollBar Color " + Uuid);
             }
             else
             {
                 // 无动画
-                Animations.AniStop("MyScrollBar Color " + Uuid);
+                ModAnimation.AniStop("MyScrollBar Color " + Uuid);
                 SetResourceReference(ForegroundProperty, newColor);
                 Opacity = newOpacity;
             }
@@ -75,7 +75,7 @@ public class MyScrollBar : ScrollBar
 
         catch (Exception ex)
         {
-            Common.Log(ex, "滚动条颜色改变出错");
+            ModBase.Log(ex, "滚动条颜色改变出错");
         }
     }
 }

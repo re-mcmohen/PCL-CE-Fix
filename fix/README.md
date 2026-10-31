@@ -30,3 +30,5 @@ dotnet publish 'Plain Craft Launcher 2/Plain Craft Launcher 2.csproj' -c Release
 原项目：[PCL Community Edition](https://github.com/PCL-Community/PCL-CE) · [PCL](https://github.com/Meloong-Git/PCL)。
 
 `fix/overlay/` 保存由 Fix 独立维护的更新页面及更新管理器，`apply.py` 会显式覆盖对应上游文件。修改这些源码时须同步更新覆盖文件。其余源码通过严格匹配的补丁应用；文件改名或接口不兼容仍需人工适配，并由构建验证。
+
+自动同步以 GitHub 最新正式 Release 的标签为基线，跳过预发布和开发分支。更新成功但临时文件被占用时，会在后续启动自动补清理；失败更新的备份保留用于恢复。

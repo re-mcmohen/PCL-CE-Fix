@@ -23,10 +23,8 @@ using System.Globalization;
 
 namespace PCL;
 
-public partial class PageToolsTest : IPageView
+public partial class PageToolsTest
 {
-    private readonly PageToolsTestViewModel _vm = new();
-    private bool _refreshed;
     private Bitmap currentSkinBitmap;
     private Bitmap generatedHeadBitmap;
 
@@ -36,41 +34,23 @@ public partial class PageToolsTest : IPageView
     public PageToolsTest()
     {
         InitializeComponent();
-        DataContext = _vm;
         BtnSelectSkin.Click += BtnSelectSkin_Click;
         CmbHeadSize.SelectionChanged += CmbHeadSize_SelectionChanged;
-        Loaded += (_, _) => RefreshOnNavigate();
-        Unloaded += (_, _) => _refreshed = false;
-    }
-
-    public PageToolsTestViewModel ViewModel => _vm;
-
-    public void OnNavigatedTo(object? parameter)
-    {
-        RefreshOnNavigate();
-    }
-
-    public void OnNavigatedFrom()
-    {
-    }
-
-    private void RefreshOnNavigate()
-    {
-        if (_refreshed)
-            return;
-        _refreshed = true;
-        MeLoaded();
+        Loaded += (_, _) => MeLoaded();
+        #if DEBUG
+        BtnCrash.Visibility = Visibility.Visible;
+        #endif
     }
 
     private void MeLoaded()
     {
-        _vm.DownloadStartEnabled = false;
+        BtnDownloadStart.IsEnabled = false;
 
         TextDownloadFolder.Text = States.Tool.DownloadFolder;
         TextDownloadFolder.Validate();
 
         if (!string.IsNullOrEmpty(TextDownloadFolder.ValidateResult) || string.IsNullOrEmpty(TextDownloadFolder.Text))
-            TextDownloadFolder.Text = Common.ExePath + @"PCL\MyDownload\";
+            TextDownloadFolder.Text = ModBase.exePath + @"PCL\MyDownload\";
 
         TextDownloadFolder.Validate();
         TextDownloadName.Validate();
@@ -80,15 +60,19 @@ public partial class PageToolsTest : IPageView
 
     private void StartButtonRefresh()
     {
-        _vm.RefreshDownloadButtons(
-            string.IsNullOrEmpty(TextDownloadFolder.ValidateResult),
-            string.IsNullOrEmpty(TextDownloadUrl.ValidateResult),
-            string.IsNullOrEmpty(TextDownloadName.ValidateResult));
+        BtnDownloadStart.IsEnabled = string.IsNullOrEmpty(TextDownloadFolder.ValidateResult) &&
+                                     string.IsNullOrEmpty(TextDownloadUrl.ValidateResult) &&
+                                     string.IsNullOrEmpty(TextDownloadName.ValidateResult);
 
-        _vm.RefreshAchievementButtons(
-            string.IsNullOrEmpty(AchievementBlockTextBox.ValidateResult),
-            string.IsNullOrEmpty(AchievementTitleTextBox.ValidateResult),
-            string.IsNullOrEmpty(AchievementString1TextBox.ValidateResult));
+        BtnDownloadOpen.IsEnabled = string.IsNullOrEmpty(TextDownloadFolder.ValidateResult);
+
+        BtnAchievementPreview.IsEnabled = string.IsNullOrEmpty(AchievementBlockTextBox.ValidateResult) &&
+                                          string.IsNullOrEmpty(AchievementTitleTextBox.ValidateResult) &&
+                                          string.IsNullOrEmpty(AchievementString1TextBox.ValidateResult);
+
+        BtnAchievementSave.IsEnabled = string.IsNullOrEmpty(AchievementBlockTextBox.ValidateResult) &&
+                                       string.IsNullOrEmpty(AchievementTitleTextBox.ValidateResult) &&
+                                       string.IsNullOrEmpty(AchievementString1TextBox.ValidateResult);
     }
 
     private void SaveCacheDownloadFolder(object sender, RoutedEventArgs e)
@@ -97,29 +81,29 @@ public partial class PageToolsTest : IPageView
         TextDownloadName.Validate();
     }
 
-    private static void DownloadState(Loading.LoaderCombo<int> loader)
+    private static void DownloadState(ModLoader.LoaderCombo<int> loader)
     {
         try
         {
             switch (loader.State)
             {
-                case Common.LoadState.Finished:
+                case ModBase.LoadState.Finished:
                 {
                     HintService.Hint(Lang.Text("Tools.Test.CustomDownload.Finished", loader.name), HintType.Success);
                     Console.Beep();
                     break;
                 }
-                case Common.LoadState.Failed:
+                case ModBase.LoadState.Failed:
                 {
-                    Common.Log(
+                    ModBase.Log(
                         loader.Error,
                         $"{loader.name}失败",
-                        Common.LogLevel.Msgbox,
+                        ModBase.LogLevel.Msgbox,
                         userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
                     Console.Beep();
                     break;
                 }
-                case Common.LoadState.Aborted:
+                case ModBase.LoadState.Aborted:
                 {
                     HintService.Hint(Lang.Text("Tools.Test.CustomDownload.Aborted", loader.name));
                     break;
@@ -146,76 +130,65 @@ public partial class PageToolsTest : IPageView
             try
             {
                 Directory.CreateDirectory(folder);
-                Common.CheckPermissionWithException(folder);
+                ModBase.CheckPermissionWithException(folder);
             }
             catch (Exception ex)
             {
-                Common.Log(
+                ModBase.Log(
                     ex,
                     $"访问文件夹失败（{folder}）",
-                    Common.LogLevel.Hint,
+                    ModBase.LogLevel.Hint,
                     userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
                 return;
             }
 
-            Common.Log("[Download] 自定义下载文件名：" + fileName);
-            Common.Log("[Download] 自定义下载文件目标：" + folder);
-            var uuid = Common.GetUuid();
-            Loading.LoaderBase loaderdownload;
+            ModBase.Log("[Download] 自定义下载文件名：" + fileName);
+            ModBase.Log("[Download] 自定义下载文件目标：" + folder);
+            var uuid = ModBase.GetUuid();
+            ModLoader.LoaderBase loaderdownload;
             if (new HttpValidator().Validate(url).IsValid)
                 loaderdownload = new LoaderDownload(Lang.Text("Tools.Test.CustomDownload.LoaderName", fileName),
                     new List<DownloadFile> { new(new[] { url }, folder + fileName, null, true, userAgent) });
             else // UNC 路径
                 loaderdownload = new LoaderDownloadUnc(Lang.Text("Tools.Test.CustomDownload.LoaderName", fileName),
                     new Tuple<string, string>(url, folder + fileName));
-            var loaderCombo = new Loading.LoaderCombo<int>(Lang.Text("Tools.Test.CustomDownload.LoaderTitle", uuid), new[] { loaderdownload })
-            {
-                OnStateChanged = a => DownloadState((Loading.LoaderCombo<int>)a),
-                Identifier = "CustomDownload:" + uuid
-            };
+            var loaderCombo = new ModLoader.LoaderCombo<int>(Lang.Text("Tools.Test.CustomDownload.LoaderTitle", uuid), new[] { loaderdownload })
+                { OnStateChanged = a => DownloadState((ModLoader.LoaderCombo<int>)a) };
             loaderCombo.Start();
-            Loading.LoaderTaskbarAdd(loaderCombo);
-            Launcher.frmMain.BtnExtraDownload.ShowRefresh();
-            Launcher.frmMain.BtnExtraDownload.Ribble();
+            ModLoader.LoaderTaskbarAdd(loaderCombo);
+            ModMain.frmMain.BtnExtraDownload.ShowRefresh();
+            ModMain.frmMain.BtnExtraDownload.Ribble();
         }
 
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "开始自定义下载失败",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
         }
     }
 
-    public static async void Jrrp()
+    public static void Jrrp()
     {
-        try
-        {
-            var random = new Random(GenerateDailySeed());
-            var luckValue = random.Next(0, 101);
-            var rating = GetRating(luckValue);
-            var title = Lang.Text("Tools.Test.Luck.MsgboxTitle", Lang.Date(DateTime.Now, "d"));
+        var random = new Random(GenerateDailySeed());
+        var luckValue = random.Next(0, 101);
+        var rating = GetRating(luckValue);
+        var title = Lang.Text("Tools.Test.Luck.MsgboxTitle", Lang.Date(DateTime.Now, "d"));
 
-            if (luckValue >= 60)
-                await Launcher.MyMsgBoxAsync(Lang.Text("Tools.Test.Luck.MessageGood", luckValue, rating), title);
-            else
-                await Launcher.MyMsgBoxAsync(Lang.Text("Tools.Test.Luck.MessageBad", luckValue, rating), title, isWarn: luckValue <= 30);
-        }
-        catch (Exception ex)
-        {
-            Common.Log(ex, "显示今日人品弹窗失败", Common.LogLevel.Feedback,
-                userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
-        }
+        if (luckValue >= 60)
+            ModMain.MyMsgBox(Lang.Text("Tools.Test.Luck.MessageGood", luckValue, rating), title);
+        else
+            ModMain.MyMsgBox(Lang.Text("Tools.Test.Luck.MessageBad", luckValue, rating), title, isWarn: luckValue <= 30);
     }
 
     public static void RubbishClear()
     {
-        Common.RunInUi(() =>
+        ModBase.RunInUi(() =>
         {
-            if (Launcher.frmToolsTest is not null && Launcher.frmToolsTest.BtnClear is not null)
-                Launcher.frmToolsTest.BtnClear.IsEnabled = false;
+            if (ModMain.frmToolsTest is not null && ModMain.frmToolsTest.BtnClear is not null)
+                ModMain.frmToolsTest.BtnClear.IsEnabled = false;
         });
         // 只有当没有运行中的Minecraft游戏且启动器不在加载状态时才能清理
 
@@ -232,22 +205,22 @@ public partial class PageToolsTest : IPageView
 
         // 删除 PCL 的缓存
 
-        Common.RunInNewThread(() =>
+        ModBase.RunInNewThread(() =>
         {
             try
             {
-                if (!GameWatcher.hasRunningMinecraft && GameLaunch.mcLaunchLoader.State != Common.LoadState.Loading)
+                if (!ModWatcher.hasRunningMinecraft && ModLaunch.mcLaunchLoader.State != ModBase.LoadState.Loading)
                 {
-                    if (NetFacade.HasDownloadingTask())
+                    if (ModNet.HasDownloadingTask())
                     {
                         HintService.Hint(Lang.Text("Tools.Test.Clean.WaitForDownload"));
                         return;
                     }
 
-                    if (!GameFolders.mcFolderList.Any()) GameFolders.McFolderListLoader.Start();
+                    if (!ModFolder.mcFolderList.Any()) ModFolder.mcFolderListLoader.Start();
                     if (States.Hint.CleanJunkFile <= 2)
                     {
-                        if (Launcher.MyMsgBox(
+                        if (ModMain.MyMsgBox(
                                 Lang.Text("Tools.Test.Clean.ConfirmMessage"),
                                 Lang.Text("Tools.Test.Clean.ConfirmTitle"),
                                 Lang.Text("Common.Action.Confirm"),
@@ -258,8 +231,8 @@ public partial class PageToolsTest : IPageView
 
                     var num = 0;
                     var cleanMcFolderList = new List<DirectoryInfo>();
-                    if (!GameFolders.mcFolderList.Any()) GameFolders.McFolderListLoader.WaitForExit();
-                    foreach (var mcFolder in GameFolders.mcFolderList)
+                    if (!ModFolder.mcFolderList.Any()) ModFolder.mcFolderListLoader.WaitForExit();
+                    foreach (var mcFolder in ModFolder.mcFolderList)
                     {
                         cleanMcFolderList.Add(new DirectoryInfo(mcFolder.Location));
                         var dirInfo = new DirectoryInfo(mcFolder.Location + "versions");
@@ -270,9 +243,9 @@ public partial class PageToolsTest : IPageView
 
                     foreach (var dirInfo in cleanMcFolderList)
                     {
-                        num += Common.DeleteDirectory(
+                        num += ModBase.DeleteDirectory(
                             dirInfo.FullName + (dirInfo.FullName.EndsWith(@"\") ? "" : @"\") + @"crash-reports\", true);
-                        num += Common.DeleteDirectory(
+                        num += ModBase.DeleteDirectory(
                             dirInfo.FullName + (dirInfo.FullName.EndsWith(@"\") ? "" : @"\") + @"logs\", true);
                         foreach (var fileInfo in dirInfo.EnumerateFiles("*"))
                             if (fileInfo.Name.StartsWith("hs_err_pid") || fileInfo.Name.EndsWith(".log") ||
@@ -285,14 +258,14 @@ public partial class PageToolsTest : IPageView
                         foreach (var dirInfo2 in dirInfo.EnumerateDirectories())
                             if ((dirInfo2.Name ?? "") == (dirInfo2.Name + "-natives" ?? "") ||
                                 dirInfo2.Name == "natives-windows-x86_64")
-                                num += Common.DeleteDirectory(dirInfo2.FullName, true);
+                                num += ModBase.DeleteDirectory(dirInfo2.FullName, true);
                     }
 
-                    num += Common.DeleteDirectory(Common.pathTemp, true);
-                    num += Common.DeleteDirectory(Path.Combine(SystemPaths.DriveLetter, "ProgramData", "PCL"), true);
+                    num += ModBase.DeleteDirectory(ModBase.pathTemp, true);
+                    num += ModBase.DeleteDirectory(Path.Combine(SystemPaths.DriveLetter, "ProgramData", "PCL"), true);
                     if (num != 0)
                     {
-                        Launcher.MyMsgBox(Lang.Text("Tools.Test.Clean.ClearedMessage", num),
+                        ModMain.MyMsgBox(Lang.Text("Tools.Test.Clean.ClearedMessage", num),
                             Lang.Text("Tools.Test.Clean.Cleared"), Lang.Text("Common.Action.Confirm"), "", "", false, true, true);
                         Process.Start(new ProcessStartInfo(Basics.ExecutablePath));
                         FormMain.EndProgramForce();
@@ -309,18 +282,18 @@ public partial class PageToolsTest : IPageView
             }
             catch (Exception ex)
             {
-                Common.Log(
+                ModBase.Log(
                     ex,
                     "清理垃圾失败",
-                    Common.LogLevel.Hint,
+                    ModBase.LogLevel.Hint,
                     userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
             }
             finally
             {
-                Common.RunInUiWait(() =>
+                ModBase.RunInUiWait(() =>
                 {
-                    if (Launcher.frmToolsTest is not null && Launcher.frmToolsTest.BtnClear is not null)
-                        Launcher.frmToolsTest.BtnClear.IsEnabled = true;
+                    if (ModMain.frmToolsTest is not null && ModMain.frmToolsTest.BtnClear is not null)
+                        ModMain.frmToolsTest.BtnClear.IsEnabled = true;
                 });
             }
         }, "Rubbish Clear");
@@ -346,7 +319,7 @@ public partial class PageToolsTest : IPageView
         try
         {
             if (!string.IsNullOrEmpty(TextDownloadName.Text) || string.IsNullOrEmpty(TextDownloadUrl.Text)) return;
-            TextDownloadName.Text = Common.GetFileNameFromPath(WebUtility.UrlDecode(TextDownloadUrl.Text));
+            TextDownloadName.Text = ModBase.GetFileNameFromPath(WebUtility.UrlDecode(TextDownloadUrl.Text));
             StartButtonRefresh();
         }
         catch
@@ -370,7 +343,7 @@ public partial class PageToolsTest : IPageView
         }
         catch (Exception ex)
         {
-            Common.Log(ex, "打开下载文件夹失败");
+            ModBase.Log(ex, "打开下载文件夹失败");
         }
     }
 
@@ -411,7 +384,7 @@ public partial class PageToolsTest : IPageView
     {
         var id = TextSkinID.Text;
         HintService.Hint(Lang.Text("Tools.Test.Skin.Fetching"));
-        Common.RunInNewThread(() =>
+        ModBase.RunInNewThread(() =>
         {
             try
             {
@@ -422,12 +395,12 @@ public partial class PageToolsTest : IPageView
                 else
                 {
                     var result = (string)ProfileUi.McLoginMojangUuid(id, true);
-                    result = Skin.McSkinGetAddress(result, "Mojang");
-                    result = Skin.McSkinDownload(result);
-                    Common.RunInUi(() =>
+                    result = ModSkin.McSkinGetAddress(result, "Mojang");
+                    result = ModSkin.McSkinDownload(result);
+                    ModBase.RunInUi(() =>
                     {
                         var path = SystemDialogs.SelectSaveFile(Lang.Text("Tools.Test.Skin.Save"), $"{id}.png", Lang.Text("Tools.Test.Skin.FileFilter"));
-                        Common.CopyFile(result, path);
+                        ModBase.CopyFile(result, path);
                         HintService.Hint(Lang.Text("Tools.Test.Skin.Saved", id), HintType.Success);
                     });
                 }
@@ -437,11 +410,11 @@ public partial class PageToolsTest : IPageView
                 if (ex.ToString().Contains("429"))
                 {
                     HintService.Hint(Lang.Text("Tools.Test.Skin.TooFrequent"), HintType.Error);
-                    Common.Log($"获取正版皮肤失败（{id}）：获取皮肤太过频繁，请 5 分钟后再试！");
+                    ModBase.Log($"获取正版皮肤失败（{id}）：获取皮肤太过频繁，请 5 分钟后再试！");
                 }
                 else
                 {
-                    Common.Log(ex, $"获取正版皮肤失败（{id}）");
+                    ModBase.Log(ex, $"获取正版皮肤失败（{id}）");
                 }
             }
         });
@@ -490,63 +463,35 @@ public partial class PageToolsTest : IPageView
         return Lang.Text(key);
     }
 
-    private async void BtnCreateShortcut_Click(object sender, MouseButtonEventArgs e)
+    private void BtnCreateShortcut_Click(object sender, MouseButtonEventArgs e)
     {
-        var ctl = sender as Control;
-        if (ctl is not null) ctl.IsEnabled = false;
-        try
-        {
-            var shortcutName = Lang.Text("Tools.Test.Shortcut.FileName", ".lnk");
-            var desktopName = Lang.Text("Tools.Test.Shortcut.Desktop");
-            var startName = Lang.Text("Tools.Test.Shortcut.StartMenu");
-            var desktop = Paths.GetSpecialPath(Environment.SpecialFolder.Desktop, shortcutName);
-            var start = Paths.GetSpecialPath(Environment.SpecialFolder.StartMenu, @"Programs\" + shortcutName);
-            var choice =
-                await Launcher.MyMsgBoxAsync(
-                    Lang.Text("Tools.Test.Shortcut.ConfirmMessage", desktopName, desktop, startName, start),
-                    Lang.Text("Tools.Test.Shortcut.SelectLocation"), Lang.Text("Common.Action.Cancel"), desktopName, startName);
-            if (choice == 1)
-                return;
-            var shortcutPath = choice == 2 ? desktop : start;
-            var locationName = choice == 2 ? desktopName : startName;
-            Files.CreateShortcut(shortcutPath, Basics.ExecutablePath);
-            HintService.Hint(Lang.Text("Tools.Test.Shortcut.Created", locationName), HintType.Success);
-        }
-        catch (Exception ex)
-        {
-            Common.Log(ex, "创建快捷方式失败", Common.LogLevel.Feedback,
-                userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
-        }
-        finally
-        {
-            if (ctl is not null) ctl.IsEnabled = true;
-        }
+        var shortcutName = Lang.Text("Tools.Test.Shortcut.FileName", ".lnk");
+        var desktopName = Lang.Text("Tools.Test.Shortcut.Desktop");
+        var startName = Lang.Text("Tools.Test.Shortcut.StartMenu");
+        var desktop = Paths.GetSpecialPath(Environment.SpecialFolder.Desktop, shortcutName);
+        var start = Paths.GetSpecialPath(Environment.SpecialFolder.StartMenu, @"Programs\" + shortcutName);
+        var choice =
+            ModMain.MyMsgBox(
+                Lang.Text("Tools.Test.Shortcut.ConfirmMessage", desktopName, desktop, startName, start),
+                Lang.Text("Tools.Test.Shortcut.SelectLocation"), Lang.Text("Common.Action.Cancel"), desktopName, startName);
+        if (choice == 1)
+            return;
+        var shortcutPath = choice == 2 ? desktop : start;
+        var locationName = choice == 2 ? desktopName : startName;
+        Files.CreateShortcut(shortcutPath, Basics.ExecutablePath);
+        HintService.Hint(Lang.Text("Tools.Test.Shortcut.Created", locationName), HintType.Success);
     }
 
     // 启动计数显示
-    private async void BtnLaunchCount_Click(object sender, MouseButtonEventArgs e)
+    private void BtnLaunchCount_Click(object sender, MouseButtonEventArgs e)
     {
-        var ctl = sender as Control;
-        if (ctl is not null) ctl.IsEnabled = false;
-        try
-        {
-            await Launcher.MyMsgBoxAsync(Lang.Text("Tools.Test.LaunchCount.Message", States.System.LaunchCount), Lang.Text("Tools.Test.LaunchCount.Title"));
-        }
-        catch (Exception ex)
-        {
-            Common.Log(ex, "显示启动次数弹窗失败", Common.LogLevel.Feedback,
-                userSummary: Lang.Text("Tools.Test.Error.OperationFailed"));
-        }
-        finally
-        {
-            if (ctl is not null) ctl.IsEnabled = true;
-        }
+        ModMain.MyMsgBox(Lang.Text("Tools.Test.LaunchCount.Message", States.System.LaunchCount), Lang.Text("Tools.Test.LaunchCount.Title"));
     }
 
     private async void BtnAchievementPreview_Click(object sender, MouseButtonEventArgs e)
     {
         var url = GetAchievementUrl();
-        Common.Log("[Net] 获取网络结果" + url);
+        ModBase.Log("[Net] 获取网络结果" + url);
         await LoadImageAsync(url);
     }
 
@@ -569,23 +514,23 @@ public partial class PageToolsTest : IPageView
                     Dispatcher.Invoke(() =>
                     {
                         AchievementImage.Source = bitmapImage;
-                        _vm.AchievementImageVisible = true;
+                        AchievementImage.Visibility = Visibility.Visible;
                     });
                 }
             else if (response.StatusCode == HttpStatusCode.NotFound)
                 Dispatcher.Invoke(() =>
                 {
-                    Common.Log("获取成就图片失败（404）");
+                    ModBase.Log("获取成就图片失败（404）");
                     HintService.Hint(Lang.Text("Tools.Test.Achievement.FetchFailed"), HintType.Error);
                 });
 
             else
-                Dispatcher.Invoke(() => Common.Log("获取成就图片失败（" + (int)response.StatusCode + "）"));
+                Dispatcher.Invoke(() => ModBase.Log("获取成就图片失败（" + (int)response.StatusCode + "）"));
         }
 
         catch (Exception ex)
         {
-            Dispatcher.Invoke(() => Common.Log(ex, "获取成就图片失败"));
+            Dispatcher.Invoke(() => ModBase.Log(ex, "获取成就图片失败"));
         }
     }
 
@@ -597,7 +542,7 @@ public partial class PageToolsTest : IPageView
 
     private async Task DownloadImageToLocalAsync(string imageUrl)
     {
-        var savePath = Common.pathTemp + @"Download\" + Common.GetHash(imageUrl) + ".png";
+        var savePath = ModBase.pathTemp + @"Download\" + ModBase.GetHash(imageUrl) + ".png";
         var client = NetworkService.GetClient();
         try
         {
@@ -617,12 +562,12 @@ public partial class PageToolsTest : IPageView
                     SystemDialogs.SelectSaveFile(Lang.Text("Tools.Test.Achievement.Save"), AchievementTitleTextBox.Text + ".png", Lang.Text("Tools.Test.Achievement.FileFilter"));
                 if (string.IsNullOrEmpty(path))
                 {
-                    Common.Log("用户取消了保存操作");
+                    ModBase.Log("用户取消了保存操作");
                     File.Delete(savePath);
                     return;
                 }
 
-                Common.CopyFile(savePath, path);
+                ModBase.CopyFile(savePath, path);
                 File.Delete(savePath);
                 HintService.Hint(Lang.Text("Tools.Test.Achievement.Saved"), HintType.Success);
             }
@@ -630,20 +575,20 @@ public partial class PageToolsTest : IPageView
             else if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 // 捕获 404 错误
-                Common.Log("获取成就图片失败（404）");
+                ModBase.Log("获取成就图片失败（404）");
                 HintService.Hint(Lang.Text("Tools.Test.Achievement.FetchFailed"), HintType.Error);
             }
             else
             {
                 // 处理其他非成功状态码
-                Common.Log("获取成就图片失败（" + (int)response.StatusCode + "）");
+                ModBase.Log("获取成就图片失败（" + (int)response.StatusCode + "）");
             }
         }
 
         catch (Exception ex)
         {
             // 捕获所有其他异常（如网络连接问题）
-            Common.Log(ex, "获取成就图片失败");
+            ModBase.Log(ex, "获取成就图片失败");
         }
     }
 
@@ -692,7 +637,7 @@ public partial class PageToolsTest : IPageView
             if (currentSkinBitmap.Width != currentSkinBitmap.Height)
             {
                 HintService.Hint(Lang.Text("Tools.Test.Avatar.InvalidSize"), HintType.Error);
-                _vm.SkinPreviewVisible = false;
+                SkinPreviewBorder.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -701,15 +646,15 @@ public partial class PageToolsTest : IPageView
             ImgFace.Source = BitmapToBitmapImage(generatedHeadBitmap);
             ImgHair.Source = null;
 
-            _vm.SkinPreviewVisible = true;
+            SkinPreviewBorder.Visibility = Visibility.Visible;
             HintService.Hint(Lang.Text("Tools.Test.Avatar.Generated"), HintType.Success);
         }
 
         catch (Exception ex)
         {
-            Common.Log(ex, "生成头像失败");
+            ModBase.Log(ex, "生成头像失败");
             HintService.Hint(Lang.Text("Tools.Test.Avatar.GenerateFailed", ex.Message), HintType.Error);
-            _vm.SkinPreviewVisible = false;
+            SkinPreviewBorder.Visibility = Visibility.Collapsed;
         }
     }
 

@@ -6,8 +6,7 @@ internal static class ControlVisualHelpers
 {
     internal static bool ShouldAnimate(FrameworkElement control, object? animationOverride = null)
     {
-        return control.IsLoaded && !Animations.AniExitsAnyControl() &&
-               !false.Equals(animationOverride);
+        return control.IsLoaded && ModAnimation.AniControlEnabled == 0 && !false.Equals(animationOverride);
     }
 
     internal static void AnimateColorOrSetResource(FrameworkElement target, DependencyProperty property,
@@ -15,12 +14,11 @@ internal static class ControlVisualHelpers
     {
         if (shouldAnimate)
         {
-            Animations.AniStart(Animations.AaColor(target, property, resourceKey, duration),
-                animationKey);
+            ModAnimation.AniStart(ModAnimation.AaColor(target, property, resourceKey, duration), animationKey);
         }
         else
         {
-            Animations.AniStop(animationKey);
+            ModAnimation.AniStop(animationKey);
             target.SetResourceReference(property, resourceKey);
         }
     }

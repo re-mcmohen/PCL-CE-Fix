@@ -58,7 +58,12 @@ public static class UpdateHelper
                 if (File.Exists(backup)) File.Copy(backup, target, overwrite: true);
                 throw new InvalidDataException("安装后的 SHA-256 校验失败，已尝试恢复旧版本。");
             }
-            TryDelete(backup);
+            // A receipt is written only after installation was verified. Failed-update backups
+            // never receive one, so startup cleanup cannot destroy recovery files.
+            var receipt = target + ".update." + id + ".done";
+            File.WriteAllText(receipt, expected);
+            for (var attempt = 0; attempt < 10 && !TryDelete(backup); attempt++) Thread.Sleep(150);
+            if (!File.Exists(backup)) TryDelete(receipt);
             return null;
         }
         catch (Exception ex) { return ex; }
@@ -67,6 +72,32 @@ public static class UpdateHelper
             if (staged is not null) TryDelete(staged);
             // Keep a backup on failure rather than risk deleting the only recoverable copy.
         }
+    }
+
+    public static void CleanupCompletedUpdates(string target)
+    {
+        target = Path.GetFullPath(target);
+        var directory = Path.GetDirectoryName(target)!;
+        var prefix = Path.GetFileName(target) + ".update.";
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, prefix + "*"))
+            {
+                var name = Path.GetFileName(path);
+                var suffix = name[prefix.Length..];
+                var dot = suffix.IndexOf('.');
+                if (dot != 32 || !Guid.TryParseExact(suffix[..dot], "N", out _)) continue;
+                var extension = suffix[dot..];
+                if (extension == ".tmp" && File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddDays(-1))
+                    TryDelete(path);
+                if (extension != ".done") continue;
+                var hash = File.ReadAllText(path).Trim();
+                if (hash.Length != 64 || !System.Linq.Enumerable.All(hash, Uri.IsHexDigit)) continue;
+                var stem = path[..^5];
+                if (TryDelete(stem + ".bak") && TryDelete(stem + ".tmp")) TryDelete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     public static bool TryDelete(string path)

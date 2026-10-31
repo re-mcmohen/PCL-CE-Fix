@@ -1,93 +1,176 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using PCL.Core.App;
+using PCL.Core.App.Configuration;
 using PCL.Core.App.Localization;
+using PCL.Core.Link.Scaffolding.EasyTier;
 
 namespace PCL;
 
-public partial class PageSetupGameLink : IPageView
+public partial class PageSetupGameLink
 {
-    private readonly PageSetupGameLinkViewModel _vm = new();
-    private bool _refreshed;
+    private bool isFirstLoad = true;
+
+    private new bool isLoaded;
 
     public PageSetupGameLink()
     {
         InitializeComponent();
-        DataContext = _vm;
+        TextUdpNatType.Text = Lang.Text("Setup.GameLink.NetworkTest.UdpNatType", Lang.Text("Setup.GameLink.NetworkTest.NotTested"));
+        TextTcpNatType.Text = Lang.Text("Setup.GameLink.NetworkTest.TcpNatType", Lang.Text("Setup.GameLink.NetworkTest.NotTested"));
+        TextIpv6Status.Text = Lang.Text("Setup.GameLink.NetworkTest.Ipv6Status", Lang.Text("Setup.GameLink.NetworkTest.NotTested"));
         Loaded += PageSetupLink_Loaded;
-        Unloaded += PageSetupLink_Unloaded;
+        Loaded += (_, _) => Reload();
     }
 
-    public PageSetupGameLinkViewModel ViewModel => _vm;
-
-    public void OnNavigatedTo(object? parameter) => Refresh();
-
-    public void OnNavigatedFrom()
+    private void PageSetupLink_Loaded(object sender, RoutedEventArgs e)
     {
-    }
-
-    protected override void RefreshLocalization() => _vm.RefreshLocalization();
-
-    private void PageSetupLink_Loaded(object sender, RoutedEventArgs e) => Refresh();
-
-    private void PageSetupLink_Unloaded(object sender, RoutedEventArgs e) => _refreshed = false;
-
-    private void Refresh()
-    {
+        // 重复加载部分
         PanBack.ScrollToHome();
-        if (_refreshed)
+
+        // 非重复加载部分
+        if (isLoaded)
             return;
-        _refreshed = true;
-        Animations.AniBeginControl();
+        isLoaded = true;
+
+        ModAnimation.AniControlEnabled += 1;
         Reload();
-        Animations.AniEndControl();
+        ModAnimation.AniControlEnabled -= 1;
     }
 
-    public void Reload() => _vm.Reload();
+    public void Reload()
+    {
+        TextLinkUsername.Text = Config.Link.Username;
+        // TextLinkRelay.Text = Config.Link.RelayServer
+        // ComboRelayType.SelectedIndex = Config.Link.RelayType
+        // ComboServerType.SelectedIndex = Config.Link.ServerType
+        CheckLatencyFirstMode.Checked = Config.Link.UseLatencyFirstMode;
+        ComboPreferProtocol.SelectedIndex = (int)Config.Link.ProtocolPreference;
+        CheckTryPunchSym.Checked = Config.Link.TryPunchSym;
+        CheckEnableIPv6.Checked = Config.Link.EnableIPv6;
+        CheckEnableCliOutput.Checked = Config.Link.EnableCliOutput;
 
-    public void Reset() => _vm.Reset();
+        // TextRelays.Text = "正在获取信息..."
+        // Do While Not (PageLinkLobby.LobbyAnnouncementLoader.State = LoadState.Finished OrElse PageLinkLobby.LobbyAnnouncementLoader.State = LoadState.Failed)
+        // Thread.Sleep(500)
+        // Loop
+        // If ETRelay.RelayList.Count > 0 Then
+        // TextRelays.Text = ""
+        // For Each Relay In ETRelay.RelayList
+        // Select Case Relay.Type
+        // Case ETRelayType.Community
+        // TextRelays.Text += "[社区] "
+        // Case ETRelayType.Selfhosted
+        // TextRelays.Text += "[自有] "
+        // Case Else 'ETRelayType.Custom
+        // TextRelays.Text += "[自定义] "
+        // End Select
+        // TextRelays.Text += Relay.Name & "，"
+        // Next
+        // TextRelays.Text = TextRelays.Text.BeforeLast("，")
+        // Else
+        // TextRelays.Text = "暂无，你可能需要手动添加中继服务器"
+        // End If
+    }
 
+    // 初始化
+    public void Reset()
+    {
+        try
+        {
+            Config.Link.Reset();
+            ModBase.Log("[Setup] 已初始化联机页设置");
+            HintService.Hint(Lang.Text("Setup.GameLink.Initialized"), HintType.Success, false);
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            ModBase.Log(
+                ex,
+                Lang.Text("Setup.GameLink.Error.InitFailed"),
+                ModBase.LogLevel.Msgbox,
+                userSummary: Lang.Text("Setup.GameLink.Error.InitFailed"));
+        }
+
+        Reload();
+    }
+
+    // 将控件改变路由到设置改变
     private void TextBoxChange(object senderRaw, TextChangedEventArgs e)
     {
         var sender = (MyTextBox)senderRaw;
-        if (!Animations.AniExitsAnyControl())
-            _vm.SetConfigByTag(sender.Tag?.ToString(), sender.Text);
+        if (ModAnimation.AniControlEnabled == 0)
+            SetByTag(sender.Tag?.ToString(), sender.Text);
     }
 
-    private void ComboBoxChange(MyComboBox sender, object e)
+    private static void ComboBoxChange(MyComboBox sender, object e)
     {
-        if (Animations.AniExitsAnyControl() || sender.SelectedIndex < 0)
-            return;
-        _vm.SetConfigByTag(sender.Tag?.ToString(), sender.SelectedIndex);
+        if (ModAnimation.AniControlEnabled == 0)
+            SetByTag(sender.Tag?.ToString(), sender.SelectedIndex);
     }
 
     private void CheckBoxChange(object senderRaw, bool user)
     {
         var sender = (MyCheckBox)senderRaw;
-        if (!Animations.AniExitsAnyControl())
-            _vm.SetConfigByTag(sender.Tag?.ToString(), sender.Checked);
+        if (ModAnimation.AniControlEnabled == 0)
+            SetByTag(sender.Tag?.ToString(), sender.Checked);
     }
+
+    private static void SetByTag(string tag, object value)
+        => ConfigService.TrySetValue(tag, value);
 
     private void LinkProtocolPerferenceChange(object sender, SelectionChangedEventArgs e)
     {
-        var index = ((MyComboBox)sender).SelectedIndex;
-        if (Animations.AniExitsAnyControl() || index < 0)
-            return;
-        _vm.SetProtocolPreference(index);
+        if (ModAnimation.AniControlEnabled == 0)
+            try
+            {
+                var selection = (LinkProtocolPreference)((MyComboBox)sender).SelectedIndex;
+                Config.Link.ProtocolPreference = selection;
+            }
+            catch (Exception ex)
+            {
+                ModBase.Log(
+                    ex,
+                    Lang.Text("Setup.GameLink.Error.ConfigChangeFailed"),
+                    ModBase.LogLevel.Hint,
+                    userSummary: Lang.Text("Setup.GameLink.Error.ConfigChangeFailed"));
+            }
     }
 
-    private async void BtnNetTest_Click(object sender, MouseButtonEventArgs e)
+    // 网络测试
+    private void BtnNetTest_Click(object sender, MouseButtonEventArgs e)
     {
         try
         {
-            await _vm.RunNetworkTestAsync();
+            BtnNetTest.IsEnabled = false;
+            BtnNetTest.Text = Lang.Text("Setup.GameLink.NetworkTest.Testing");
+            ModBase.RunInNewThread(() =>
+            {
+                var status = CliNetTest.GetNetStatusAsync().GetAwaiter().GetResult();
+                ModBase.RunInUi(() =>
+                {
+                    TextUdpNatType.Text =
+                        Lang.Text("Setup.GameLink.NetworkTest.UdpNatType", CliNetTest.GetNatTypeString(status.UdpNatType));
+                    TextTcpNatType.Text =
+                        Lang.Text("Setup.GameLink.NetworkTest.TcpNatType", CliNetTest.GetNatTypeString(status.TcpNatType));
+                    TextIpv6Status.Text = Lang.Text("Setup.GameLink.NetworkTest.Ipv6Status",
+                        status.SupportIPv6
+                            ? Lang.Text("Setup.GameLink.NetworkTest.Supported")
+                            : Lang.Text("Setup.GameLink.NetworkTest.Unsupported"));
+                    BtnNetTest.IsEnabled = true;
+                    BtnNetTest.Text = Lang.Text("Setup.GameLink.NetworkTest.Start");
+                });
+            });
         }
         catch (Exception ex)
         {
-            Common.Log(ex,
+            ModBase.Log(ex,
                 "[Link] 获取网络测试结果失败",
-                Common.LogLevel.Hint,
+                ModBase.LogLevel.Hint,
                 userSummary: Lang.Text("Setup.GameLink.Error.NetworkTestFailed"));
+            BtnNetTest.IsEnabled = true;
+            BtnNetTest.Text = Lang.Text("Setup.GameLink.NetworkTest.Start");
         }
     }
 }

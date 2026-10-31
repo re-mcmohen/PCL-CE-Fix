@@ -16,7 +16,7 @@ public static class ForkUpdateService
         new HttpClient { Timeout = TimeSpan.FromSeconds(8) },
         System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
         System.Runtime.InteropServices.Architecture.Arm64,
-        log: (repository, error) => Common.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
+        log: (repository, error) => ModBase.Log(error, $"[Update] {repository} 检查失败"), routes: GetRoutes);
     private static readonly SemaphoreSlim InstallLock = new(1, 1);
     private static readonly object RefreshLock = new();
     private static Task _backgroundRefresh = Task.CompletedTask;
@@ -26,7 +26,7 @@ public static class ForkUpdateService
         GitHubUpdateRoutes.Get(url, Config.Update.NetworkMode, DeviceRegion);
     public static bool Installing { get; private set; }
 
-    public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(Common.VersionBaseName,
+    public static bool IsNewer(ReleaseUpdateCandidate release) => release.IsNewer(ModBase.versionBaseName,
         Secrets.CommitHash, ReleaseUpdatePolicy.CurrentReleaseTag, ReleaseUpdatePolicy.CurrentBuildTime);
 
     public static Task<RepositoryUpdateResult[]> CheckAsync(bool force = false) => Client.CheckAsync(force);
@@ -39,7 +39,7 @@ public static class ForkUpdateService
             _backgroundRefresh = Task.Run(async () =>
             {
                 try { await CheckAsync().ConfigureAwait(false); }
-                catch (Exception ex) { Common.Log(ex, "[Update] 后台检查失败"); }
+                catch (Exception ex) { ModBase.Log(ex, "[Update] 后台检查失败"); }
             });
         }
     }
@@ -47,7 +47,7 @@ public static class ForkUpdateService
     public static void NotifyInBackground() => _ = Task.Run(async () =>
     {
         try { await CheckAndNotifyAsync().ConfigureAwait(false); }
-        catch (Exception ex) { Common.Log(ex, "[Update] 后台更新通知失败"); }
+        catch (Exception ex) { ModBase.Log(ex, "[Update] 后台更新通知失败"); }
     });
 
     public static async Task CheckAndNotifyAsync()
@@ -55,13 +55,13 @@ public static class ForkUpdateService
         var results = await CheckAsync().ConfigureAwait(false);
         var available = results.Where(r => r.Release is not null && IsNewer(r.Release)).ToArray();
         if (available.Length == 0) return;
-        Common.RunInUi(() =>
+        ModBase.RunInUi(() =>
         {
             var names = string.Join("\n", available.Select(r =>
                 $"{(r.Release!.IsFork ? "PCL_CE_Fix（保留补丁）" : "上游 PCL CE（原版）")}：{r.Release.Tag}"));
-            if (Launcher.MyMsgBox($"检测到可用更新：\n{names}\n\n请在更新页面选择来源，不会自动切换版本。",
+            if (ModMain.MyMsgBox($"检测到可用更新：\n{names}\n\n请在更新页面选择来源，不会自动切换版本。",
                     "启动器更新", "选择更新来源", "稍后") == 1)
-                Launcher.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
+                ModMain.frmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
         });
     }
 
@@ -72,27 +72,27 @@ public static class ForkUpdateService
         try
         {
             if (UpdateManager.isUpdateWaitingRestart ||
-                UpdateManager.updateLoader?.State == Common.LoadState.Loading)
+                UpdateManager.updateLoader?.State == ModBase.LoadState.Loading)
                 throw new InvalidOperationException("已有更新任务，请先完成该任务。");
             Installing = true;
             var source = release.IsFork ? "PCL_CE_Fix（保留区域限制补丁）" : "上游 PCL CE（原版，可能恢复区域限制）";
-            if (Launcher.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
+            if (ModMain.MyMsgBox($"将下载并安装：{source}\n版本：{release.Tag}\n\n安装后将重启启动器，是否继续？",
                     "确认更新来源", "安装并重启", "取消", isWarn: !release.IsFork) != 1) return;
             output = Path.Combine(Basics.ExecutableDirectory, "PCL", "Updates", Guid.NewGuid().ToString("N"), "Launcher.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             // Reuse the existing taskbar download UI, then verify the exact asset selected by the player.
-            var download = new Loading.LoaderCombo<int>($"更新 {source}",
-                new List<Loading.LoaderBase>
+            var download = new ModLoader.LoaderCombo<int>($"更新 {source}",
+                new List<ModLoader.LoaderBase>
                 {
                     new LoaderDownload("下载启动器", new List<DownloadFile>
-                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new Common.FileChecker(hash: release.Sha256)) })
+                        { new(GetRoutes(release.DownloadUrl).ToArray(), output, new ModBase.FileChecker(hash: release.Sha256)) })
                 });
             UpdateManager.updateLoader = null;
             download.Start();
-            Loading.LoaderTaskbarAdd(download);
-            Launcher.frmMain.BtnExtraDownload.ShowRefresh();
+            ModLoader.LoaderTaskbarAdd(download);
+            ModMain.frmMain.BtnExtraDownload.ShowRefresh();
             await Task.Run(() => download.WaitForExit());
-            var hash = Common.GetFileSha256(output);
+            var hash = ModBase.GetFileSHA256(output);
             if (!string.Equals(hash, release.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("下载文件的 SHA-256 校验失败，已停止安装。");
             UpdateManager.UpdateRestart(true, verifiedSource: output, expectedSha256: release.Sha256);
@@ -100,8 +100,8 @@ public static class ForkUpdateService
         catch (Exception ex)
         {
             try { if (output is not null && File.Exists(output)) File.Delete(output); }
-            catch (Exception cleanupError) { Common.Log(cleanupError, "[Update] 清理下载文件失败"); }
-            Common.Log(ex, "[Update] 安装失败");
+            catch (Exception cleanupError) { ModBase.Log(cleanupError, "[Update] 清理下载文件失败"); }
+            ModBase.Log(ex, "[Update] 安装失败");
             HintService.Hint($"更新失败：{ex.Message}", HintType.Error);
         }
         finally { Installing = false; InstallLock.Release(); }

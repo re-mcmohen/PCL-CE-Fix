@@ -24,7 +24,7 @@ public partial class MyExtraButton
     public ShowCheckDelegate showCheck = null;
 
     // 自定义属性
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     public MyExtraButton()
     {
@@ -105,36 +105,33 @@ public partial class MyExtraButton
             if (field == value)
                 return;
             field = value;
-            Common.RunInUi(() =>
+            ModBase.RunInUi(() =>
             {
                 if (value)
                 {
                     // 有了
                     Visibility = Visibility.Visible;
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaScaleTransform(this,
-                                0.3d - ((ScaleTransform)RenderTransform).ScaleX, 500,
-                                60, new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak)),
-                            Animations.AaScaleTransform(this, 0.7d, 500, 60,
-                                new Animations.AniEaseOutBack(Animations.AniEasePower.Weak)),
-                            Animations.AaHeight(this, 50d - Height, 200,
-                                ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Weak))
+                            ModAnimation.AaScaleTransform(this, 0.3d - ((ScaleTransform)RenderTransform).ScaleX, 500,
+                                60, new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak)),
+                            ModAnimation.AaScaleTransform(this, 0.7d, 500, 60,
+                                new ModAnimation.AniEaseOutBack(ModAnimation.AniEasePower.Weak)),
+                            ModAnimation.AaHeight(this, 50d - Height, 200,
+                                ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Weak))
                         }, "MyExtraButton MainScale " + Uuid);
                 }
                 else
                 {
                     // 没了
-                    Animations.AniStart(
+                    ModAnimation.AniStart(
                         new[]
                         {
-                            Animations.AaScaleTransform(this,
-                                -((ScaleTransform)RenderTransform).ScaleX, 100,
-                                ease: new Animations.AniEaseInFluent(Animations.AniEasePower.Weak)),
-                            Animations.AaHeight(this, -Height, 400, 100,
-                                new Animations.AniEaseOutFluent()),
-                            Animations.AaCode(() => Visibility = Visibility.Collapsed, after: true)
+                            ModAnimation.AaScaleTransform(this, -((ScaleTransform)RenderTransform).ScaleX, 100,
+                                ease: new ModAnimation.AniEaseInFluent(ModAnimation.AniEasePower.Weak)),
+                            ModAnimation.AaHeight(this, -Height, 400, 100, new ModAnimation.AniEaseOutFluent()),
+                            ModAnimation.AaCode(() => Visibility = Visibility.Collapsed, after: true)
                         }, "MyExtraButton MainScale " + Uuid);
                 }
 
@@ -156,25 +153,23 @@ public partial class MyExtraButton
 
     private void StartScaleAnimation(double targetScale, double reboundScale, int reboundDuration = 60)
     {
-        Animations.AniStart(
+        ModAnimation.AniStart(
             new[]
             {
-                Animations.AaScaleTransform(PanScale,
-                    targetScale - ((ScaleTransform)PanScale.RenderTransform).ScaleX,
-                    800, ease: new Animations.AniEaseOutFluent(Animations.AniEasePower.Strong)),
-                Animations.AaScaleTransform(PanScale, reboundScale, reboundDuration,
-                    ease: new Animations.AniEaseOutFluent())
+                ModAnimation.AaScaleTransform(PanScale, targetScale - ((ScaleTransform)PanScale.RenderTransform).ScaleX,
+                    800, ease: new ModAnimation.AniEaseOutFluent(ModAnimation.AniEasePower.Strong)),
+                ModAnimation.AaScaleTransform(PanScale, reboundScale, reboundDuration,
+                    ease: new ModAnimation.AniEaseOutFluent())
             }, "MyExtraButton Scale " + Uuid);
     }
 
     private void RefreshScaleAfterRelease()
     {
-        Animations.AniStart(
+        ModAnimation.AniStart(
             new[]
             {
-                Animations.AaScaleTransform(PanScale,
-                    1d - ((ScaleTransform)PanScale.RenderTransform).ScaleX, 300,
-                    ease: new Animations.AniEaseOutBack())
+                ModAnimation.AaScaleTransform(PanScale, 1d - ((ScaleTransform)PanScale.RenderTransform).ScaleX, 300,
+                    ease: new ModAnimation.AniEaseOutBack())
             }, "MyExtraButton Scale " + Uuid);
     }
 
@@ -189,7 +184,7 @@ public partial class MyExtraButton
     {
         if (isLeftMouseHeld)
         {
-            Common.Log("[Control] 按下附加按钮" +
+            ModBase.Log("[Control] 按下附加按钮" +
                         (ToolTip is null or "" ? "" : "：" + ToolTip));
             Click?.Invoke(sender, e);
             e.Handled = true;
@@ -201,7 +196,7 @@ public partial class MyExtraButton
     {
         if (isRightMouseHeld)
         {
-            Common.Log("[Control] 右键按下附加按钮" +
+            ModBase.Log("[Control] 右键按下附加按钮" +
                         (ToolTip is null or "" ? "" : "：" + ToolTip));
             RightClick?.Invoke(sender, e);
             e.Handled = true;
@@ -231,7 +226,7 @@ public partial class MyExtraButton
     {
         if (!isRightMouseHeld)
             RefreshScaleAfterRelease();
-        if (isLeftMouseHeld) Launcher.RaiseCustomEvent(this);
+        if (isLeftMouseHeld) ModMain.RaiseCustomEvent(this);
         isLeftMouseHeld = false;
         RefreshColor(); // 直接刷新颜色以判断是否已触发 MouseLeave
     }
@@ -250,12 +245,11 @@ public partial class MyExtraButton
     {
         isLeftMouseHeld = false;
         isRightMouseHeld = false;
-        Animations.AniStart(
+        ModAnimation.AniStart(
             new[]
             {
-                Animations.AaScaleTransform(PanScale,
-                    1d - ((ScaleTransform)PanScale.RenderTransform).ScaleX, 500,
-                    ease: new Animations.AniEaseOutFluent())
+                ModAnimation.AaScaleTransform(PanScale, 1d - ((ScaleTransform)PanScale.RenderTransform).ScaleX, 500,
+                    ease: new ModAnimation.AniEaseOutFluent())
             }, "MyExtraButton Scale " + Uuid);
         RefreshColor(); // 直接刷新颜色以判断是否已触发 MouseLeave
     }
@@ -268,21 +262,18 @@ public partial class MyExtraButton
             {
                 if (!IsEnabled)
                     // 禁用
-                    Animations.AniStart(
-                        Animations.AaColor(PanColor, BackgroundProperty, "ColorBrushGray4",
-                            animationColorIn),
+                    ModAnimation.AniStart(
+                        ModAnimation.AaColor(PanColor, BackgroundProperty, "ColorBrushGray4", animationColorIn),
                         "MyExtraButton Color " + Uuid);
                 else if (IsMouseOver)
                     // 指向
-                    Animations.AniStart(
-                        Animations.AaColor(PanColor, BackgroundProperty, "ColorBrush4",
-                            animationColorIn),
+                    ModAnimation.AniStart(
+                        ModAnimation.AaColor(PanColor, BackgroundProperty, "ColorBrush4", animationColorIn),
                         "MyExtraButton Color " + Uuid);
                 else
                     // 普通
-                    Animations.AniStart(
-                        Animations.AaColor(PanColor, BackgroundProperty, "ColorBrush3",
-                            animationColorOut),
+                    ModAnimation.AniStart(
+                        ModAnimation.AaColor(PanColor, BackgroundProperty, "ColorBrush3", animationColorOut),
                         "MyExtraButton Color " + Uuid);
             }
 
@@ -296,7 +287,7 @@ public partial class MyExtraButton
         }
         catch (Exception ex)
         {
-            Common.Log(ex, "刷新图标按钮颜色出错");
+            ModBase.Log(ex, "刷新图标按钮颜色出错");
         }
     }
 
@@ -305,7 +296,7 @@ public partial class MyExtraButton
     /// </summary>
     public void Ribble()
     {
-        Common.RunInUi(() =>
+        ModBase.RunInUi(() =>
         {
             var shape = new Border
             {
@@ -314,15 +305,14 @@ public partial class MyExtraButton
             };
             shape.SetResourceReference(Border.BackgroundProperty, "ColorBrush5");
             PanScale.Children.Insert(0, shape);
-            Animations.AniStart(
+            ModAnimation.AniStart(
                 new[]
                 {
-                    Animations.AaScaleTransform(shape, 13d, 1000,
-                        ease: new Animations.AniEaseInoutFluent(Animations.AniEasePower.Strong,
-                            0.3d)),
-                    Animations.AaOpacity(shape, -shape.Opacity, 1000),
-                    Animations.AaCode(() => PanScale.Children.Remove(shape), after: true)
-                }, "ExtraButton Ribble " + Common.GetUuid());
+                    ModAnimation.AaScaleTransform(shape, 13d, 1000,
+                        ease: new ModAnimation.AniEaseInoutFluent(ModAnimation.AniEasePower.Strong, 0.3d)),
+                    ModAnimation.AaOpacity(shape, -shape.Opacity, 1000),
+                    ModAnimation.AaCode(() => PanScale.Children.Remove(shape), after: true)
+                }, "ExtraButton Ribble " + ModBase.GetUuid());
         });
     }
 

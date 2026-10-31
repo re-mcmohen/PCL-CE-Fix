@@ -19,7 +19,7 @@ public partial class MySearchBox : MyCard
     
     private void MySearchBox_KeyUp(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) Launcher.RaiseCustomEvent(this);
+        if (e.Key == Key.Enter) ModMain.RaiseCustomEvent(this);
     }
     
     // 属性
@@ -84,8 +84,7 @@ public partial class MySearchBox : MyCard
     private void UpdateClearButtonState()
     {
         var hasText = !string.IsNullOrEmpty(TextBox.Text);
-        Animations.AniStart(
-            Animations.AaOpacity(BtnClear, hasText ? 1d - BtnClear.Opacity : -BtnClear.Opacity, 90),
+        ModAnimation.AniStart(ModAnimation.AaOpacity(BtnClear, hasText ? 1d - BtnClear.Opacity : -BtnClear.Opacity, 90),
             "MySearchBox ClearBtn " + uuid);
         BtnClear.IsHitTestVisible = hasText;
     }

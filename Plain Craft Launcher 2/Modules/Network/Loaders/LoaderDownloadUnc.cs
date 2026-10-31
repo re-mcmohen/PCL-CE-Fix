@@ -1,8 +1,9 @@
 using System.IO;
+using System.Threading;
 
 namespace PCL.Network.Loaders;
 
-public class LoaderDownloadUnc : Loading.LoaderBase
+public class LoaderDownloadUnc : ModLoader.LoaderBase
 {
     public string unc;
     public string savePath;
@@ -25,13 +26,13 @@ public class LoaderDownloadUnc : Loading.LoaderBase
 
         lock (lockState)
         {
-            if (State == Common.LoadState.Loading)
+            if (State == ModBase.LoadState.Loading)
                 return;
-            State = Common.LoadState.Loading;
+            State = ModBase.LoadState.Loading;
         }
 
         _cancellationTokenSource = new CancellationTokenSource();
-        Common.RunInNewThread(() => Run(_cancellationTokenSource.Token), $"UNC/{Uuid}");
+        ModBase.RunInNewThread(() => Run(_cancellationTokenSource.Token), $"UNC/{Uuid}");
     }
 
     private void Run(CancellationToken cancellationToken)
@@ -40,8 +41,8 @@ public class LoaderDownloadUnc : Loading.LoaderBase
         {
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(Path.GetDirectoryName(savePath) ?? throw new IOException("下载路径无效"));
-            Common.CopyFile(unc, savePath);
-            State = Common.LoadState.Finished;
+            ModBase.CopyFile(unc, savePath);
+            State = ModBase.LoadState.Finished;
         }
         catch (OperationCanceledException)
         {
@@ -50,15 +51,15 @@ public class LoaderDownloadUnc : Loading.LoaderBase
         catch (Exception ex)
         {
             Error = ex;
-            State = Common.LoadState.Failed;
+            State = ModBase.LoadState.Failed;
         }
     }
 
     public override void Abort()
     {
-        if (State >= Common.LoadState.Finished)
+        if (State >= ModBase.LoadState.Finished)
             return;
-        State = Common.LoadState.Aborted;
+        State = ModBase.LoadState.Aborted;
         _cancellationTokenSource?.Cancel();
     }
 }

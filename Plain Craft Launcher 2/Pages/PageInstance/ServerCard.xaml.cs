@@ -1,9 +1,9 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using PCL.Core.App.Localization;
 using PCL.Core.UI;
 using PCL.Core.UI.Theme;
+using PCL.Core.App.Localization;
 
 namespace PCL;
 
@@ -50,7 +50,7 @@ public partial class ServerCard
     public void UpdateServerInfo(MinecraftServerInfo serverInfo)
     {
         server = serverInfo;
-        Common.RunInUi(() => UpdateServerUi());
+        ModBase.RunInUi(() => UpdateServerUi());
     }
 
     /// <summary>
@@ -85,16 +85,16 @@ public partial class ServerCard
         {
             _manager.SetSelectedIconByName("loading");
             MotdRenderer.ClearCanvas();
-            ServerPlayer.TrySetLocalizedValue("Text", "Instance.Server.Card.Connecting");
-            ServerMotD.TrySetLocalizedValue("Text", "Instance.Server.Card.ConnectingDots");
+            ServerPlayer.Text = Lang.Text("Instance.Server.Card.Connecting");
+            ServerMotD.Text = Lang.Text("Instance.Server.Card.ConnectingDots");
             ServerMotD.Visibility = Visibility.Visible;
         }
         else if (server.Status == ServerStatus.Offline)
         {
             _manager.SetSelectedIconByName("signal_offline");
             MotdRenderer.ClearCanvas();
-            ServerPlayer.TrySetLocalizedValue("Text", "Instance.Server.Card.Offline");
-            ServerMotD.TrySetLocalizedValue("Text", "Instance.Server.Card.ServerOffline");
+            ServerPlayer.Text = Lang.Text("Instance.Server.Card.Offline");
+            ServerMotD.Text = Lang.Text("Instance.Server.Card.ServerOffline");
             ServerMotD.Visibility = Visibility.Visible;
         }
     }
@@ -146,22 +146,21 @@ public partial class ServerCard
     {
         try
         {
-            var launchOptions = new GameLaunch.McLaunchOptions
+            var launchOptions = new ModLaunch.McLaunchOptions
             {
                 ServerIp = server.Address,
                 instance = PageInstanceLeft.McInstance
             };
-            GameLaunch.McLaunchStart(launchOptions);
-            Launcher.frmMain.PageChange(new FormMain.PageStackData
-                { page = FormMain.PageType.Launch });
+            ModLaunch.McLaunchStart(launchOptions);
+            ModMain.frmMain.PageChange(new FormMain.PageStackData { page = FormMain.PageType.Launch });
             HintService.Hint(Lang.Text("Instance.Server.Card.ConnectingTo", server.Name));
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 Lang.Text("Instance.Server.Card.LaunchFailed"),
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Instance.Server.Card.LaunchFailed"));
             HintService.Hint(Lang.Text("Instance.Server.Card.LaunchFailedMsg", ex.Message), HintType.Error);
         }
@@ -179,7 +178,7 @@ public partial class ServerCard
         }
         catch (Exception ex)
         {
-            Common.Log(ex, Lang.Text("Instance.Server.Card.CopyAddressFailed"));
+            ModBase.Log(ex, Lang.Text("Instance.Server.Card.CopyAddressFailed"));
             HintService.Hint(Lang.Text("Instance.Server.Card.CopyAddressFailed"), HintType.Error);
         }
     }
@@ -218,7 +217,7 @@ public partial class ServerCard
 
     private void BtnRemove_Click(object sender, RoutedEventArgs e)
     {
-        if (Launcher.MyMsgBox(
+        if (ModMain.MyMsgBox(
                 Lang.Text("Instance.Server.Card.RemoveConfirmMessage", server.Name, server.Address),
                 Lang.Text("Instance.Server.Card.RemoveConfirmTitle"), Lang.Text("Common.Action.Confirm"),
                 Lang.Text("Common.Action.Cancel")

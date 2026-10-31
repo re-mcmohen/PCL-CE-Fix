@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,21 +6,19 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using PCL.Core.App.Localization;
-using CompFile = PCL.LocalComp.LocalCompFile;
+using CompFile = PCL.ModLocalComp.LocalCompFile;
 
 namespace PCL;
 
 public partial class PageInstanceCompJarInJar
 {
-    private readonly PageInstanceCompJarInJarViewModel _vm = new();
-    private JarInJarIndex _index = null!;
+    private ModJarInJarIndex _index = null!;
     private string? _instanceMc;
     private string _search = "";
 
     public PageInstanceCompJarInJar()
     {
         InitializeComponent();
-        DataContext = _vm;
         BtnBack.Click += (_, _) => GoBack();
         BtnEmptyBack.Click += (_, _) => GoBack();
         BtnRefresh.Click += (_, _) => RefreshList();
@@ -31,17 +29,6 @@ public partial class PageInstanceCompJarInJar
         };
         Loaded += (_, _) => RefreshList();
     }
-
-    protected override void RefreshLocalization()
-    {
-        if (LocalComp.CompResourceListLoader.output is null)
-            return;
-        var savedOffset = PanBack.VerticalOffset;
-        RefreshList();
-        Dispatcher.BeginInvoke(new Action(() => PanBack.ScrollToVerticalOffset(savedOffset)));
-    }
-
-    public PageInstanceCompJarInJarViewModel ViewModel => _vm;
 
     private bool _Match(CompFile m)
     {
@@ -56,7 +43,7 @@ public partial class PageInstanceCompJarInJar
         embedded is not null && embedded.Any(e => _Match(e) || _AnyEmbeddedMatch(e.EmbeddedMods));
 
     private static void GoBack()
-        => Launcher.frmInstanceLeft?.PageChange(FormMain.PageSubType.VersionMod);
+        => ModMain.frmInstanceLeft?.PageChange(FormMain.PageSubType.VersionMod);
 
     /// <summary>后台内嵌解析完成后刷新当前页。</summary>
     public void OnJijResolved()
@@ -68,7 +55,7 @@ public partial class PageInstanceCompJarInJar
 
     private void RefreshList()
     {
-        var output = LocalComp.CompResourceListLoader.output;
+        var output = ModLocalComp.compResourceListLoader.output;
         if (!_OutputBelongsToCurrentInstance(output))
         {
             GoBack();
@@ -79,8 +66,8 @@ public partial class PageInstanceCompJarInJar
             .Where(m => !m.IsFolder && m.State != CompFile.LocalFileStatus.Unavailable)
             .ToList();
         _instanceMc = PageInstanceLeft.McInstance?.Info?.VanillaName;
-        _index = new JarInJarIndex(allMods, _instanceMc);
-        _vm.HideLoading();
+        _index = new ModJarInJarIndex(allMods, _instanceMc);
+        PanLoad.Visibility = Visibility.Collapsed;
 
         PanWarnList.Children.Clear();
         foreach (var host in allMods)
@@ -93,6 +80,7 @@ public partial class PageInstanceCompJarInJar
         }
 
         var hasWarning = PanWarnList.Children.Count > 0;
+        CardWarnings.Visibility = hasWarning ? Visibility.Visible : Visibility.Collapsed;
 
         PanConflictList.Children.Clear();
         var conflictCount = 0;
@@ -103,12 +91,14 @@ public partial class PageInstanceCompJarInJar
             conflictCount++;
         }
 
+        CardConflicts.Visibility = conflictCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+
         PanRelationList.Children.Clear();
         var relationCount = 0;
         foreach (var host in allMods)
         {
-            var hostDeps = JarInJarIndex.BuildOwnDependencies(host, host.DetectedLoader)
-                .Where(d => !DependencyIds.IsPlatform(d.DepId)).ToList();
+            var hostDeps = ModJarInJarIndex.BuildOwnDependencies(host, host.DetectedLoader)
+                .Where(d => !ModDependencyIds.IsPlatform(d.DepId)).ToList();
             if (hostDeps.Count > 0 && (_Match(host) || hostDeps.Any(d => _Contains(d.DepId))))
             {
                 PanRelationList.Children.Add(_MakeRelationCard(host, null, hostDeps));
@@ -117,8 +107,8 @@ public partial class PageInstanceCompJarInJar
 
             foreach (var node in _index.GetLoadableEmbedded(host))
             {
-                var nodeDeps = JarInJarIndex.BuildOwnDependencies(node, node.JijLoader)
-                    .Where(d => !DependencyIds.IsPlatform(d.DepId)).ToList();
+                var nodeDeps = ModJarInJarIndex.BuildOwnDependencies(node, node.JijLoader)
+                    .Where(d => !ModDependencyIds.IsPlatform(d.DepId)).ToList();
                 if (nodeDeps.Count == 0) continue;
                 if (!_Match(node) && !nodeDeps.Any(d => _Contains(d.DepId))) continue;
                 PanRelationList.Children.Add(_MakeRelationCard(node, host, nodeDeps));
@@ -126,16 +116,21 @@ public partial class PageInstanceCompJarInJar
             }
         }
 
+        SectionRelations.Visibility = relationCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+
         PanBundledList.Children.Clear();
         var bundledMods = allMods
             .Where(m => m.EmbeddedMods is { Count: > 0 } && (_Match(m) || _AnyEmbeddedMatch(m.EmbeddedMods)))
             .ToList();
         foreach (var mod in bundledMods)
             PanBundledList.Children.Add(_MakeCard(mod, _BuildBundledContent));
+        SectionBundled.Visibility = bundledMods.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         // 搜索无结果时不显示"没有模组"空态（避免误导为实例本身没有），仅留空白
-        _vm.ApplySectionVisibility(hasWarning, conflictCount, relationCount, bundledMods.Count,
-            _search.Length > 0);
+        PanEmpty.Visibility =
+            hasWarning || conflictCount > 0 || relationCount > 0 || bundledMods.Count > 0 || _search.Length > 0
+                ? Visibility.Collapsed
+                : Visibility.Visible;
     }
 
     private MyCard _MakeCard(CompFile mod, Action<StackPanel, CompFile> build, string? title = null)
@@ -157,8 +152,8 @@ public partial class PageInstanceCompJarInJar
 
     private void _AppendMissingWarning(CompFile mod, CompFile? parent, string? loader)
     {
-        var probed = JarInJarIndex.BuildOwnDependencies(mod, loader)
-            .Where(d => !DependencyIds.IsPlatform(d.DepId) && !d.Optional)
+        var probed = ModJarInJarIndex.BuildOwnDependencies(mod, loader)
+            .Where(d => !ModDependencyIds.IsPlatform(d.DepId) && !d.Optional)
             .Select(d => (d, status: _index.Analyze(mod, d)))
             .ToList();
         var missing = probed.Where(x => x.status == JijDepStatus.Missing).Select(x => x.d.DepId).ToList();
@@ -201,7 +196,7 @@ public partial class PageInstanceCompJarInJar
         return row;
     }
 
-    private MyCard _MakeRelationCard(CompFile mod, CompFile? parent, List<JarInJarIndex.DepRow> deps)
+    private MyCard _MakeRelationCard(CompFile mod, CompFile? parent, List<ModJarInJarIndex.DepRow> deps)
     {
         var title = parent is null
             ? _DisplayName(mod)
@@ -294,7 +289,7 @@ public partial class PageInstanceCompJarInJar
         return row;
     }
 
-    private Panel BuildDependencyRow(CompFile mod, JarInJarIndex.DepRow dep)
+    private Panel BuildDependencyRow(CompFile mod, ModJarInJarIndex.DepRow dep)
     {
         var status = _index.Analyze(mod, dep);
         var optional = dep.Optional;
@@ -340,8 +335,8 @@ public partial class PageInstanceCompJarInJar
         if (inst is null || output is null) return false;
         try
         {
-            var input = LocalComp.CompResourceListLoader.input;
-            if (input is null || input.compType != Comp.CompType.Mod ||
+            var input = ModLocalComp.compResourceListLoader.input;
+            if (input is null || input.compType != ModComp.CompType.Mod ||
                 !string.Equals(Path.GetFullPath(input.gameVersion.PathInstance)
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                     Path.GetFullPath(inst.PathInstance)

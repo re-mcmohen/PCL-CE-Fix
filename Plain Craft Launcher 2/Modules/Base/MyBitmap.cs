@@ -34,9 +34,8 @@ public class MyBitmap
             try
             {
                 filePathOrResourceName =
-                    filePathOrResourceName.Replace("pack://application:,,,/images/",
-                        Common.PathImage);
-                if (filePathOrResourceName.StartsWithF(Common.PathImage))
+                    filePathOrResourceName.Replace("pack://application:,,,/images/", ModBase.pathImage);
+                if (filePathOrResourceName.StartsWithF(ModBase.pathImage))
                 {
                     if (_Cache.ContainsKey(filePathOrResourceName))
                     {
@@ -81,8 +80,7 @@ public class MyBitmap
                     throw new Exception($"加载 MyBitmap 意外失败（{filePathOrResourceName}）", ex);
                 }
 
-                Common.Log(ex, $"指定类型有误的 MyBitmap 加载（{filePathOrResourceName}）",
-                    Common.LogLevel.Developer);
+                ModBase.Log(ex, $"指定类型有误的 MyBitmap 加载（{filePathOrResourceName}）", ModBase.LogLevel.Developer);
                 break;
             }
         } while (false);

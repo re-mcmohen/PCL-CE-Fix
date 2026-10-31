@@ -2,8 +2,8 @@
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using PCL.Core.App.Localization;
 
+using PCL.Core.App.Localization;
 namespace PCL;
 
 public class MyComboBox : ComboBox
@@ -29,7 +29,7 @@ public class MyComboBox : ComboBox
     private MyTextBox textBox;
 
     // 基础
-    public int Uuid = Common.GetUuid();
+    public int Uuid = ModBase.GetUuid();
 
     public MyComboBox()
     {
@@ -84,8 +84,6 @@ public class MyComboBox : ComboBox
 
     public bool DropDownWidthSync { get; set; } = true;
 
-    internal bool KeyboardAway;
-
     public ContentPresenter ContentPresenter => (ContentPresenter)Template.FindName("PART_Content", this);
     public event TextChangedEventHandler? TextChanged;
 
@@ -110,10 +108,10 @@ public class MyComboBox : ComboBox
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "初始化可编辑文本框失败（" + (Name ?? "") + "）",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Application.Control.Error.OperationFailed"));
         }
     }
@@ -165,20 +163,20 @@ public class MyComboBox : ComboBox
         }
 
         // 触发颜色动画
-        if (IsLoaded && !Animations.AniExitsAnyControl()) // 防止默认属性变更触发动画
+        if (IsLoaded && ModAnimation.AniControlEnabled == 0) // 防止默认属性变更触发动画
         {
             // 有动画
-            Animations.AniStart(
+            ModAnimation.AniStart(
                 new[]
                 {
-                    Animations.AaColor(this, ForegroundProperty, foreColorName, time),
-                    Animations.AaColor(this, BackgroundProperty, backColorName, time)
+                    ModAnimation.AaColor(this, ForegroundProperty, foreColorName, time),
+                    ModAnimation.AaColor(this, BackgroundProperty, backColorName, time)
                 }, "MyComboBox Color " + Uuid);
         }
         else
         {
             // 无动画
-            Animations.AniStop("MyComboBox Color " + Uuid);
+            ModAnimation.AniStop("MyComboBox Color " + Uuid);
             SetResourceReference(ForegroundProperty, foreColorName);
             SetResourceReference(BackgroundProperty, backColorName);
         }
@@ -186,23 +184,22 @@ public class MyComboBox : ComboBox
 
     private void MyComboBox_DropDownOpened(object sender, EventArgs e)
     {
-        KeyboardAway = false;
         realWidth = Width;
         if (DropDownWidthSync)
             Width = ActualWidth;
         try
         {
             var popup = (Grid)Template.FindName("PanPopup", this);
-            popup.Opacity = Launcher.frmMain.Opacity;
+            popup.Opacity = ModMain.frmMain.Opacity;
             if (!DropDownWidthSync)
                 popup.MinWidth = ActualWidth;
         }
         catch (Exception ex)
         {
-            Common.Log(
+            ModBase.Log(
                 ex,
                 "设置下拉框属性失败",
-                Common.LogLevel.Feedback,
+                ModBase.LogLevel.Feedback,
                 userSummary: Lang.Text("Application.Control.Error.OperationFailed"));
         }
     }
@@ -210,7 +207,6 @@ public class MyComboBox : ComboBox
     private void MyComboBox_DropDownClosed(object sender, EventArgs e)
     {
         Width = realWidth;
-        KeyboardAway = false;
     }
 
     private void MyComboBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -237,7 +233,7 @@ public class MyComboBox : ComboBox
     
     private void MyComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (IsLoaded && !Animations.AniExitsAnyControl()) Launcher.RaiseCustomEvent(this);
+        if (IsLoaded && ModAnimation.AniControlEnabled == 0) ModMain.RaiseCustomEvent(this);
     }
     
     protected override bool IsItemItsOwnContainerOverride(object item)

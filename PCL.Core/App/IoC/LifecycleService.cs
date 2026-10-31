@@ -123,16 +123,12 @@ partial class Lifecycle
             }
             // 若日志服务已启动则清空日志缓冲
             if (logService is null) return;
-            LifecycleLogItem[] pending;
             lock (_PendingLogs)
             {
-                _logService = logService;
-                pending = _PendingLogs.ToArray();
+                foreach (var item in _PendingLogs) _PushLog(item, logService);
                 _PendingLogs.Clear();
+                _logService = logService;
             }
-
-            // Push outside the lock: the log service may open a modal window.
-            foreach (var item in pending) _PushLog(item, logService);
         }
     }
 
